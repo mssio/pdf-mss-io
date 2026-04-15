@@ -66,6 +66,7 @@ docker buildx inspect --bootstrap
 
 docker buildx build \
   --platform linux/amd64 \
+  -t registry.mss.io/pdf-mss-io:latest \
   -t registry.mss.io/pdf-mss-io:1.0.0 \
   --push \
   .

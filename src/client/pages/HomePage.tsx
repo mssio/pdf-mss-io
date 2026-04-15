@@ -10,7 +10,7 @@ export function HomePage() {
       <div className="mb-12 text-center sm:mb-16">
         <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-muted/50 px-3 py-1 text-xs font-medium text-muted-foreground">
           <Sparkles className="size-3.5" />
-          Local-first PDF utilities
+          Privacy-focused PDF utilities
         </div>
         <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-5xl">Your PDF toolbox</h1>
         <p className="mx-auto mt-4 max-w-2xl text-pretty text-lg text-muted-foreground">

@@ -25,10 +25,12 @@ COPY --from=builder /app/dist ./dist
 COPY src ./src
 COPY tsconfig.json ./
 
-RUN mkdir -p /app/data/tmp
+RUN mkdir -p /app/data/tmp]
+RUN chown -R bun:bun /app
 
 ENV NODE_ENV=production
 
 EXPOSE 3000
 
+USER bun
 CMD ["bun", "src/index.ts"]
