@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Download, Loader2, ShieldAlert } from "lucide-react";
 import { Link } from "react-router-dom";
 
+import { PdfFileDropzone } from "@/client/components/PdfFileDropzone";
 import { Button } from "@/client/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/client/components/ui/card";
 import { Input } from "@/client/components/ui/input";
@@ -124,10 +125,14 @@ export function DecryptPage() {
         </CardHeader>
         <form onSubmit={onSubmit}>
           <CardContent className="flex flex-col gap-6">
-            <div className="grid gap-2">
-              <Label htmlFor="file">PDF file</Label>
-              <Input id="file" name="file" type="file" accept="application/pdf,.pdf" required disabled={busy} />
-            </div>
+            <PdfFileDropzone
+              id="file"
+              name="file"
+              required
+              disabled={busy}
+              onInvalidFile={(message) => setError(message)}
+              onFileAccepted={() => setError(null)}
+            />
             <div className="grid gap-2">
               <Label htmlFor="password">Password</Label>
               <Input
