@@ -4,6 +4,9 @@ node_modules
 # output
 out
 dist
+
+# decrypt job files (when TMP_DIR not set)
+data/tmp
 *.tgz
 
 # code coverage

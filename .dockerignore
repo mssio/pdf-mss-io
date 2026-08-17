@@ -1,0 +1,14 @@
+# Never copy host install into the image (wrong OS/arch → "cannot execute binary file")
+node_modules
+
+# Build output is produced inside Docker
+dist
+
+.git
+.github
+.cursor
+*.md
+.env
+.env.*
+.DS_Store
+data/tmp
