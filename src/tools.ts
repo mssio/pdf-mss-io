@@ -1,4 +1,4 @@
-import { FileKey2, FileLock2, type LucideIcon } from "lucide-react";
+import { Combine, FileKey2, FileLock2, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 
 export type Tool = {
@@ -33,5 +33,14 @@ export const tools: Tool[] = [
     description: "Add a password and choose permissions for printing, editing and copying.",
     icon: FileLock2,
     load: () => import("@/pages/EncryptPage"),
+  },
+  {
+    id: "merge",
+    path: "/merge",
+    title: "Merge PDFs",
+    navLabel: "Merge",
+    description: "Combine several PDFs into one file, in the order you choose.",
+    icon: Combine,
+    load: () => import("@/pages/MergePage"),
   },
 ];

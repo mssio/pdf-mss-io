@@ -95,3 +95,11 @@ describe("encrypt", () => {
     expect((await qpdf.info(output.slice(), { password: "fresh" })).encrypted).toBe(true);
   });
 });
+
+describe("merge", () => {
+  test("3 + 2 pages make 5, and the output is not encrypted even from a restricted input", async () => {
+    const { output } = await qpdf.merge([pdfFile(await restrictionOnly(3)), pdfFile(makePdf(2))]);
+    assertOutput(output);
+    expect(await qpdf.info(output.slice())).toMatchObject({ pageCount: 5, encrypted: false });
+  });
+});
