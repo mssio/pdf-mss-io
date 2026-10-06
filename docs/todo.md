@@ -51,7 +51,7 @@ Also keep one real-world PDF of your own handy.
 - [ ] Adding `protected.pdf` → the error names "protected.pdf" and links to Decrypt.
 - [ ] Keyboard only: Tab reaches the drop zone (Enter opens the file picker) and every row button.
 
-## Task 7: Extract pages (not ready yet)
+## Task 7: Extract pages (ready)
 
 - [ ] `plain.pdf` → "This PDF has 5 pages."; Extract stays disabled until then.
 - [ ] Pages ` 1 - 2 , Z ` → `plain-pages.pdf` with 3 pages; "Extracted 3 pages in your browser."
