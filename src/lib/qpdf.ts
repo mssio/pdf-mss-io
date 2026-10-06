@@ -1,0 +1,97 @@
+import type { PdfInfo, Qpdf, QpdfErrorCode } from "@mssio/qpdf-wasm";
+
+let pending: Promise<Qpdf> | null = null;
+
+/**
+ * The app's single qpdf instance. The package and its wasm load on first use only;
+ * a failed load is not cached, so the next call retries.
+ */
+export function getQpdf(): Promise<Qpdf> {
+  pending ??= import("@mssio/qpdf-wasm")
+    .then((module) => module.createQpdf())
+    .catch((error: unknown) => {
+      pending = null;
+      throw error;
+    });
+  return pending;
+}
+
+/** Thrown when a tool other than Decrypt gets a PDF that needs a password to open. */
+export class PasswordProtectedError extends Error {
+  readonly fileName: string;
+
+  constructor(fileName: string) {
+    super(`${fileName} needs a password to open`);
+    this.name = "PasswordProtectedError";
+    this.fileName = fileName;
+  }
+}
+
+/** qpdf "succeeded" but returned no usable PDF (seen when the wasm runs out of memory on large inputs). */
+export class TruncatedOutputError extends Error {
+  constructor() {
+    super("qpdf returned an empty or truncated PDF");
+    this.name = "TruncatedOutputError";
+  }
+}
+
+function qpdfCode(error: unknown): QpdfErrorCode | null {
+  if (error instanceof Error && "code" in error && typeof error.code === "string") {
+    return error.code as QpdfErrorCode;
+  }
+  return null;
+}
+
+/**
+ * Every tool except Decrypt calls this first. Rejects PDFs that need a password to open;
+ * restriction-only PDFs (owner password only) pass. Returns qpdf's info for the file.
+ */
+export async function ensureNoOpenPassword(qpdf: Qpdf, file: File): Promise<PdfInfo> {
+  try {
+    return await qpdf.info(file);
+  } catch (error) {
+    if (qpdfCode(error) === "INVALID_PASSWORD") throw new PasswordProtectedError(file.name);
+    throw error;
+  }
+}
+
+const PDF_HEADER = [0x25, 0x50, 0x44, 0x46, 0x2d]; // "%PDF-"
+
+/** Guards every download: qpdf output must be a real PDF, not an empty or truncated buffer. */
+export function assertOutput(output: Uint8Array): void {
+  if (output.length < 64 || PDF_HEADER.some((byte, index) => output[index] !== byte)) {
+    throw new TruncatedOutputError();
+  }
+}
+
+/** qpdf repairs are routine; keep them out of the UI but visible to developers. */
+export function logWarnings(warnings: string[]): void {
+  if (warnings.length > 0) console.warn("qpdf warnings:", warnings);
+}
+
+export type JobPhase = "load" | "run";
+export type ErrorDescription = { message: string; detail?: string; decryptFirst?: boolean };
+
+export const OUT_OF_MEMORY_MESSAGE =
+  "Not enough memory to process this on this device. Try a smaller file or a computer.";
+const OUT_OF_MEMORY = /bad_alloc|out of memory|aborted|qpdf crashed/i;
+
+/** Maps anything a qpdf job threw to the message the user sees. */
+export function describeQpdfError(
+  error: unknown,
+  phase: JobPhase,
+  options: { nameFiles?: boolean } = {},
+): ErrorDescription {
+  if (phase === "load") return { message: "Couldn't load the PDF engine. Check your connection and reload." };
+  if (error instanceof PasswordProtectedError) {
+    const subject = options.nameFiles ? `“${error.fileName}”` : "This PDF";
+    return { message: `${subject} is password-protected. Remove its password with Decrypt first.`, decryptFirst: true };
+  }
+  if (error instanceof TruncatedOutputError) return { message: OUT_OF_MEMORY_MESSAGE };
+  const code = qpdfCode(error);
+  if (code === "INVALID_PASSWORD") return { message: "Incorrect password. Check it and try again." };
+  if (code === "INVALID_PDF") return { message: "This file isn't a readable PDF." };
+  const detail = error instanceof Error ? error.message : String(error);
+  if (OUT_OF_MEMORY.test(detail)) return { message: OUT_OF_MEMORY_MESSAGE };
+  return { message: "Could not process this PDF.", detail };
+}
