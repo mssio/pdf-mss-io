@@ -73,7 +73,7 @@ index.html                  title "PDF Toolbox", inline no-flash theme script, f
 public/favicon.svg          new icon (source for all PWA icons)
 pwa-assets.config.ts        icon generation config (@vite-pwa/assets-generator)
 src/main.tsx                createRoot + RouterProvider + PWA registration
-src/router.tsx              AppShell layout route; "/" HomePage; one lazy route per tool
+src/router.ts               AppShell layout route; "/" HomePage; one lazy route per tool
 src/tools.ts                tool registry: id, path, title, nav label, description, icon, lazy loader
 src/index.css               ported (background gradients)
 src/styles/globals.css      ported unchanged (theme tokens, light/dark)
