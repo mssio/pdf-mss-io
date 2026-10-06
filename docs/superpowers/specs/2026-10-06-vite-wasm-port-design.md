@@ -26,6 +26,7 @@ that referred to the server changes.
 | PDF engine | `@mssio/qpdf-wasm` 0.1.x (qpdf 12.4.2). It owns the Web Worker; the app does not write its own. |
 | Offline | PWA via `vite-plugin-pwa`: installable, works offline after the first online visit. |
 | Size policy | 250 MB combined input hard limit for every tool; warning above 100 MB on phones (section 3). |
+| UI library | shadcn only (no Catalyst / other kits). Old look kept; added shadcn `checkbox`, `alert`, `badge`, `separator`. Non-error notices (phone warning, "already protected", compress "already small") use `Alert`. |
 | Package manager | npm. |
 
 Verified with throwaway probes against the real package (Node, 2026-10-06): merge, select pages,
@@ -38,7 +39,7 @@ handled 1 GB; encrypt succeeded at 300 MB, threw `std::bad_alloc` at 400–500 M
 **Stack:** Vite 8, React 19, TypeScript (scaffold, React Compiler preset kept), React Router 7
 (`createBrowserRouter` + `RouterProvider`), Tailwind 4 via `@tailwindcss/vite`, `tw-animate-css`,
 shadcn "new-york" primitives, `lucide-react`, `clsx`, `tailwind-merge`, `class-variance-authority`,
-`@radix-ui/react-slot`, `@radix-ui/react-label`, `@radix-ui/react-checkbox`, `@mssio/qpdf-wasm`, `vite-plugin-pwa`, Vitest.
+`@radix-ui/react-slot`, `@radix-ui/react-label`, `@radix-ui/react-checkbox`, `@radix-ui/react-separator`, `@mssio/qpdf-wasm`, `vite-plugin-pwa`, Vitest.
 
 **Path alias:** `@/*` → `src/*` (tsconfig `paths` + Vite `resolve.alias`).
 
@@ -55,8 +56,9 @@ src/components/AppShell.tsx         ported; nav from registry; footer copy chang
 src/components/PdfFileDropzone.tsx  ported; gains `multiple` mode (section 2)
 src/components/ToolPage.tsx         shared tool layout: title, intro, form card, error box
 src/components/ResultCard.tsx       shared success card: download button, notes, "another"/"home"
-src/components/ErrorBox.tsx         the old red error paragraph, with optional muted detail line
-src/components/ui/{button,card,input,label,checkbox}.tsx  ported shadcn (+ checkbox for encrypt)
+src/components/ErrorBox.tsx         the old red error paragraph, with optional muted detail line (kept as-is to match the old UI)
+src/components/ui/{button,card,input,label}.tsx  ported shadcn, unchanged
+src/components/ui/{checkbox,alert,badge,separator}.tsx  added from shadcn (new-york), same tokens
 src/lib/utils.ts            cn()
 src/lib/theme.ts            THEME_STORAGE_KEY = "pdf-mss-io-theme" (same key as old app)
 src/lib/use-theme.ts        ported unchanged
@@ -140,7 +142,7 @@ console.
 
 - `MAX_TOTAL_BYTES = 250 * 1024 * 1024`, applied to the sum of all selected inputs in every tool.
   Over the limit: error shown immediately, submit disabled.
-- `PHONE_WARN_BYTES = 100 * 1024 * 1024`. If `isLikelyPhone()` and total > 100 MB: amber notice
+- `PHONE_WARN_BYTES = 100 * 1024 * 1024`. If `isLikelyPhone()` and total > 100 MB: amber `Alert` notice
   (not blocking): "Large files may fail on phones. If it doesn't work, try a computer."
 - `isLikelyPhone()`: `navigator.deviceMemory <= 4` when available (Chromium), otherwise
   `matchMedia("(pointer: coarse) and (max-width: 820px)")`.
@@ -213,7 +215,8 @@ Same form and copy as before except:
     and the permissions from `encrypt.capabilities` (print, modify, extract, annotate/forms).
   - Attachments: count and names (from `attachments`).
   - Linearized ("fast web view"): `run(["--check-linearization", "in.pdf"])` exit 0 → yes.
-- Displayed as a definition list in a card, grouped: Document, Pages, Security, Other. Missing
+- Displayed as a definition list in a card, grouped: Document, Pages, Security, Other. Groups are split
+  by `Separator`; "Encrypted", the method (e.g. "AES-256") and "Linearized" render as `Badge`s. Missing
   values are omitted, not shown as empty.
 
 ## 5. PWA and offline
