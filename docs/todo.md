@@ -37,7 +37,7 @@ Also keep one real-world PDF of your own handy.
 - [ ] "Decrypt another file" returns to an empty form; "Back to home" works.
 - [ ] DevTools → Network: opening `/` alone loads no `.wasm`; the first Decrypt loads `qpdf-*.wasm` once.
 
-## Task 5: Encrypt (not ready yet)
+## Task 5: Encrypt (ready)
 
 - [ ] Different passwords → "Passwords don't match."; empty → "Password is required."
 - [ ] `plain.pdf`, password `secret`, printing unticked → `plain-protected.pdf` asks for `secret` in your PDF viewer, and printing is disabled.
