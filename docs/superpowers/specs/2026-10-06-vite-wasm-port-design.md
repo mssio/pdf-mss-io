@@ -1,7 +1,8 @@
 # PDF Toolbox: static Vite + WASM app
 
 Date: 2026-10-06
-Status: approved; revised 2026-10-06 (latest stable versions, password-protected PDFs rejected outside Decrypt)
+Status: approved; revised 2026-10-06 (latest stable versions, password-protected PDFs rejected outside Decrypt,
+release 1.0.0 on `@mssio/qpdf-wasm` 1.0.0)
 
 ## Goal
 
@@ -23,7 +24,7 @@ that referred to the server changes.
 | Hosting | Static `dist/` only. No Docker, no `bin/build.sh`; the owner hosts it. |
 | Server features | Dropped: 15-minute download links, cleanup timers/cron, 40 MB upload limit. |
 | Routing | Clean URLs via `createBrowserRouter`. Hosts must rewrite unknown paths to `/index.html` (documented). Once the service worker is installed it serves `index.html` for navigations itself. |
-| PDF engine | `@mssio/qpdf-wasm` (qpdf 12.4.2). It owns the Web Worker; the app does not write its own. |
+| PDF engine | `@mssio/qpdf-wasm` **1.0.0** (qpdf 12.4.2). It owns the Web Worker; the app does not write its own. |
 | Password-protected input | **Only Decrypt accepts PDFs that need a password to open.** Every other tool rejects them and points to Decrypt. PDFs that open without a password but carry owner restrictions ("restriction-only") are accepted by every tool. No password fields outside Decrypt. |
 | Offline | PWA via `vite-plugin-pwa`: installable, works offline after the first online visit. |
 | Size policy | 250 MB combined input hard limit for every tool; warning above 100 MB on phones (section 3). |
@@ -31,8 +32,10 @@ that referred to the server changes.
 | Versions | Latest stable of every package (section 1), verified to build, lint and test together on 2026-10-06. |
 | Runtime | Node 24 LTS (`.nvmrc` = `24`, `engines.node` = `>=24`). Node 25 is end-of-life and Vitest 5 doesn't support it. |
 | Package manager | npm. |
+| Release | The app ships as **version 1.0.0**: `package.json` `version` is `1.0.0`, `CHANGELOG.md` has a 1.0.0 entry, `main` is tagged `v1.0.0`, and a GitHub release `v1.0.0` carries `pdf-toolbox-1.0.0.zip` (the built `dist/`). See section 8. |
 
-Verified with throwaway probes against the real package (Node, 2026-10-06), using valid PDFs:
+Verified with throwaway probes against the real package (Node, 2026-10-06), using valid PDFs, first
+with 0.1.0 and again with **1.0.0** (same API and byte-identical `qpdf.wasm`; only `engines.node` rose to `>=24`):
 merge, select pages, encrypt (AES-256/128, owner-only), compress, info and `run(["--json", ...])`
 all work. Merge output is never encrypted. PDFs encrypted with only an owner password report
 `encrypted: true` but open without a password; `decrypt(file, { password: "" })` removes their
@@ -61,7 +64,7 @@ qpdf-in-wasm issue, to be reported upstream; the app guards against it).
 | eslint-plugin-react-hooks / eslint-plugin-react-refresh / globals | 7.1.1 / 0.5.7 / 17.13.0 | |
 | @types/react, @types/react-dom | 19.3.0 | |
 | @types/node | ^24 | matches the Node 24 runtime, not the latest 26.x |
-| @mssio/qpdf-wasm | 0.1.0 | |
+| @mssio/qpdf-wasm | 1.0.0 | requires Node ≥ 24, matching the runtime |
 | lucide-react / clsx / tailwind-merge / class-variance-authority | 1.52.0 / 2.1.1 / 3.7.0 / 0.7.1 | |
 | @radix-ui/react-slot / -label / -checkbox / -separator | 1.4.0 / 2.1.16 / 1.3.12 / 1.1.16 | |
 
@@ -307,6 +310,17 @@ restriction-only input accepted;
 size limit error and phone warning; theme toggle persists without flash; direct load of every tool
 URL; home page loads no `.wasm`; PWA: service worker active, `qpdf*.wasm` precached, offline reload
 of a tool page and a successful run offline.
+
+## 8. Release 1.0.0
+
+- `package.json`: `"version": "1.0.0"`; `@mssio/qpdf-wasm` installed as `^1.0.0`.
+- `CHANGELOG.md` (new, Keep a Changelog format) with a `## [1.0.0] - <release date>` entry listing
+  the six tools, offline/PWA support, the size limit and the port from the Bun server.
+- README states the current version and links the changelog.
+- Release steps (each needs the owner's go-ahead, since they publish or touch `main`): open a PR from
+  `port-vite-wasm` to `main`; after it merges, tag the merge commit `v1.0.0` and push the tag; build
+  `dist/`, zip it as `pdf-toolbox-1.0.0.zip`, and create the GitHub release `v1.0.0` with the
+  changelog entry as notes and the zip attached.
 
 ## Out of scope
 

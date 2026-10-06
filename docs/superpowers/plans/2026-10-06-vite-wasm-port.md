@@ -18,14 +18,15 @@
 | 10 | PWA and offline | Manifest, generated icons, service worker precaching the wasm | Sonnet 5.5 | ~20 min |
 | 11 | Docs | README rewrite, AGENTS.md, CLAUDE.md | Sonnet 5.5 | ~20 min |
 | 12 | Final verification | All checks green; manual desktop, offline and phone pass | Opus 5.5 + owner | ~20 min agent, ~20 min owner |
+| 13 | Release 1.0.0 | CHANGELOG, PR to `main`, tag `v1.0.0`, GitHub release with `dist` zip | Sonnet 5.5 + owner approvals | ~15 min agent, ~5 min owner |
 
-**Total:** about 5.5 hours of agent time. Subagent-driven execution adds a reviewer pass per task
+**Total:** about 5.75 hours of agent time. Subagent-driven execution adds a reviewer pass per task
 (about 10 minutes each, Opus 5.5). Model choice: Opus 5.5 for tasks that define interfaces other
 tasks consume or parse untrusted structure (3, 4, 6, 9, 12); Sonnet 5.5 for tasks that follow an
 established pattern.
 
 **Goal:** Rebuild the Bun PDF Toolbox as a static Vite + React Router + WASM app with six
-client-side tools, installable and offline-capable.
+client-side tools, installable and offline-capable, and release it as version 1.0.0.
 
 **Architecture:** A static SPA. React Router 8 data router with one lazy route per tool, all driven
 by a registry in `src/tools.ts`. PDF work goes through `@mssio/qpdf-wasm` (qpdf in a Web Worker),
@@ -33,7 +34,7 @@ reached only via `src/lib/qpdf.ts`. Logic that can run without React lives in `s
 unit-tested in Node; pages are thin.
 
 **Tech Stack:** Node 24 LTS, Vite 8.3, React 19.3, React Router 8.4, TypeScript 6.0.3, Tailwind 4.3,
-shadcn (new-york) on Radix, `@mssio/qpdf-wasm` 0.1.0, `vite-plugin-pwa` 2.0, Vitest 5.0.
+shadcn (new-york) on Radix, `@mssio/qpdf-wasm` 1.0.0, `vite-plugin-pwa` 2.0, Vitest 5.0.
 
 **Spec:** `docs/superpowers/specs/2026-10-06-vite-wasm-port-design.md`
 
@@ -41,6 +42,7 @@ shadcn (new-york) on Radix, `@mssio/qpdf-wasm` 0.1.0, `vite-plugin-pwa` 2.0, Vit
 
 - Node 24 LTS: `.nvmrc` contains `24`; `package.json` `engines.node` is `">=24"`. Run every command under Node 24 (`nvm use`). Vitest 5 does not run on Node 25.
 - Versions are the latest stable ones listed in spec section 1. TypeScript stays `~6.0.3` (typescript-eslint 8.71.1 supports TypeScript < 6.1). `@types/node` stays `^24`.
+- The app is version **1.0.0** (`package.json` `"version": "1.0.0"`) and depends on `@mssio/qpdf-wasm` **`^1.0.0`** (1.0.0 has the same API as 0.1.0 and requires Node ≥ 24). Never install 0.x.
 - Static output only: no server code, no API calls, no analytics. Files and passwords never leave the browser.
 - All PDF work goes through `src/lib/qpdf.ts` (`getQpdf()`); never import `@mssio/qpdf-wasm` with a static value import in app code (type-only imports are fine). Tests may import it directly.
 - Pass `File` objects to qpdf. If you pass a `Uint8Array` you still need afterwards, pass `bytes.slice()`, because the worker takes ownership of byte inputs.
@@ -98,7 +100,7 @@ Expected: `v24.21.0` (or newer 24.x).
 - [ ] **Step 2: Install dependencies (latest stable)**
 
 ```bash
-npm install react@^19.3.0 react-dom@^19.3.0 react-router@^8.4.0 @mssio/qpdf-wasm@^0.1.0 \
+npm install react@^19.3.0 react-dom@^19.3.0 react-router@^8.4.0 @mssio/qpdf-wasm@^1.0.0 \
   lucide-react@^1.52.0 clsx@^2.1.1 tailwind-merge@^3.7.0 class-variance-authority@^0.7.1 \
   @radix-ui/react-slot@^1.4.0 @radix-ui/react-label@^2.1.16 @radix-ui/react-checkbox@^1.3.12 \
   @radix-ui/react-separator@^1.1.16 tw-animate-css@^1.4.0
@@ -109,11 +111,11 @@ npm install -D vite@^8.3.3 @vitejs/plugin-react@^6.1.2 @rolldown/plugin-babel@^0
   @types/react-dom@^19.3.0 tailwindcss@^4.3.3 @tailwindcss/vite@^4.3.3 vitest@^5.0.3
 ```
 
-Expected: no `ERESOLVE` errors. `npm ls vitest typescript react-router` shows 5.0.x, 6.0.3, 8.4.x.
+Expected: no `ERESOLVE` errors. `npm ls vitest typescript react-router @mssio/qpdf-wasm` shows 5.0.x, 6.0.3, 8.4.x, 1.0.x.
 
-- [ ] **Step 3: Update `package.json` scripts and engines**
+- [ ] **Step 3: Update `package.json` version, scripts and engines**
 
-Set the `"scripts"` block and add `"engines"` (keep everything else):
+Set `"version": "1.0.0"` (the scaffold has `"0.0.0"`), set the `"scripts"` block and add `"engines"` (keep everything else):
 
 ```json
   "scripts": {
@@ -3711,6 +3713,8 @@ every operation runs locally with [qpdf](https://github.com/qpdf/qpdf) compiled 
 ([`@mssio/qpdf-wasm`](https://www.npmjs.com/package/@mssio/qpdf-wasm)). The build is plain static
 files, and the app installs as a PWA that works offline after the first visit.
 
+Current version: **1.0.0** ([changelog](CHANGELOG.md)).
+
 ## Tools
 
 | Tool | Path | What it does |
@@ -3925,7 +3929,7 @@ Claude-Session: https://claude.ai/code/session_01NvYC5VwsQMEVA9j9Scdfc1"
 git push
 ```
 
-Expected: every relative link points at a file that exists (`AGENTS.md`).
+Expected: every relative link points at a file that exists (`AGENTS.md`; `CHANGELOG.md` is created in Task 13).
 
 ---
 
@@ -3943,10 +3947,12 @@ Expected: every relative link points at a file that exists (`AGENTS.md`).
 ```bash
 rm -rf node_modules dist
 npm ci
+npm ls @mssio/qpdf-wasm
+node -p "require('./package.json').version"
 npm run lint && npm test && npm run build
 ```
 
-Expected: all pass from a clean install. Record the test count and the precache entry count.
+Expected: `@mssio/qpdf-wasm@1.0.x`, version `1.0.0`, and all checks pass from a clean install. Record the test count and the precache entry count.
 
 - [ ] **Step 2: Desktop walkthrough (`npm run preview`, Chrome and Safari or Firefox)**
 
@@ -3989,3 +3995,100 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01NvYC5VwsQMEVA9j9Scdfc1"
 git push
 ```
+
+---
+
+### Task 13: Release 1.0.0
+
+**Files:**
+- Create: `CHANGELOG.md`
+
+**Interfaces:**
+- Consumes: the verified branch from Task 12.
+- Produces: PR to `main`, tag `v1.0.0`, GitHub release `v1.0.0` with `pdf-toolbox-1.0.0.zip`.
+
+Steps 2–4 publish or change `main`. **Ask the owner before each one** and wait for a yes.
+
+- [ ] **Step 1: Changelog**
+
+`CHANGELOG.md`:
+
+```markdown
+# Changelog
+
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
+[Semantic Versioning](https://semver.org/).
+
+## [1.0.0] - YYYY-MM-DD
+
+First release of the static, client-side PDF Toolbox (replaces the Bun server app).
+
+### Added
+
+- Decrypt, Encrypt, Merge, Extract pages, Compress and Info tools, all running in the browser with
+  qpdf 12.4.2 compiled to WebAssembly (`@mssio/qpdf-wasm` 1.0.0).
+- Installable PWA that works offline after the first visit.
+- 250 MB combined size limit per operation, with a warning above 100 MB on phones.
+
+### Changed
+
+- PDFs and passwords never leave the device; the server, upload limit and 15-minute download links
+  are gone.
+
+[1.0.0]: https://github.com/mssio/pdf-mss-io/releases/tag/v1.0.0
+```
+
+Replace `YYYY-MM-DD` with the release date (the day the tag is created). Commit and push:
+
+```bash
+git add CHANGELOG.md
+git commit -m "docs: changelog for 1.0.0
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NvYC5VwsQMEVA9j9Scdfc1"
+git push
+```
+
+- [ ] **Step 2: Pull request to `main` (owner approval)**
+
+```bash
+gh pr create --base main --head port-vite-wasm --title "PDF Toolbox 1.0.0: static Vite + WASM app" --body "$(cat <<'EOF'
+Rebuilds the PDF Toolbox as a static Vite + React Router app with six client-side tools powered by
+@mssio/qpdf-wasm 1.0.0, installable and offline-capable.
+
+- Spec: docs/superpowers/specs/2026-10-06-vite-wasm-port-design.md
+- Plan: docs/superpowers/plans/2026-10-06-vite-wasm-port.md
+- Verification: see Task 12 results in the final report.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+https://claude.ai/code/session_01NvYC5VwsQMEVA9j9Scdfc1
+EOF
+)"
+```
+
+The owner reviews and merges the PR (or approves a merge with `gh pr merge --merge`).
+
+- [ ] **Step 3: Tag `v1.0.0` on `main` (owner approval)**
+
+```bash
+git switch main
+git pull --ff-only
+node -p "require('./package.json').version"   # must print 1.0.0
+git tag -a v1.0.0 -m "PDF Toolbox 1.0.0"
+git push origin v1.0.0
+```
+
+- [ ] **Step 4: GitHub release with the built site (owner approval)**
+
+```bash
+rm -rf dist && npm ci && npm run build
+(cd dist && zip -qr ../pdf-toolbox-1.0.0.zip .)
+awk '/^## \[1.0.0\]/{f=1;next} /^## \[|^\[1.0.0\]:/{f=0} f' CHANGELOG.md > /tmp/release-notes-1.0.0.md
+gh release create v1.0.0 pdf-toolbox-1.0.0.zip --title "PDF Toolbox 1.0.0" --notes-file /tmp/release-notes-1.0.0.md
+rm pdf-toolbox-1.0.0.zip
+```
+
+Expected: `gh release view v1.0.0` lists `pdf-toolbox-1.0.0.zip`. Unzipping it gives `index.html`,
+`sw.js`, `manifest.webmanifest` and `assets/` with `qpdf-*.wasm`; that folder is what the owner hosts.
