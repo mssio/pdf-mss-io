@@ -1,4 +1,4 @@
-import { Combine, FileKey2, FileLock2, FileOutput, type LucideIcon } from "lucide-react";
+import { Combine, FileKey2, FileLock2, FileOutput, Shrink, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 
 export type Tool = {
@@ -51,5 +51,14 @@ export const tools: Tool[] = [
     description: "Save selected pages, like 1-3 or 5 to the end, as a new PDF.",
     icon: FileOutput,
     load: () => import("@/pages/ExtractPage"),
+  },
+  {
+    id: "compress",
+    path: "/compress",
+    title: "Compress PDF",
+    navLabel: "Compress",
+    description: "Repack a PDF's internal data to make it smaller. Best for text-heavy files.",
+    icon: Shrink,
+    load: () => import("@/pages/CompressPage"),
   },
 ];

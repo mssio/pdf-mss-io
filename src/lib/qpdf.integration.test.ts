@@ -123,3 +123,18 @@ describe("selectPages", () => {
     expect(described.detail).toContain("out of range");
   });
 });
+
+describe("compress", () => {
+  test("returns a smaller valid PDF for a repetitive document", async () => {
+    const input = makePdf(200);
+    const { output } = await qpdf.compress(pdfFile(input));
+    assertOutput(output);
+    expect(output.length).toBeLessThan(input.length);
+    expect((await qpdf.info(output.slice())).pageCount).toBe(200);
+  });
+
+  test("keeps owner restrictions", async () => {
+    const { output } = await qpdf.compress(pdfFile(await restrictionOnly()));
+    expect((await qpdf.info(output.slice())).encrypted).toBe(true);
+  });
+});
