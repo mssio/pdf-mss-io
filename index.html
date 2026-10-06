@@ -2,9 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>pdf-mss-io</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>PDF Toolbox</title>
+    <meta name="description" content="Private PDF tools that run entirely in your browser." />
+    <script>
+      (function () {
+        try {
+          var k = "pdf-mss-io-theme";
+          var s = localStorage.getItem(k);
+          var dark = s === "dark" || (s !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
