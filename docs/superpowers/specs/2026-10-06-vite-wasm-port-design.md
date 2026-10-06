@@ -317,6 +317,8 @@ of a tool page and a successful run offline.
 - `CHANGELOG.md` (new, Keep a Changelog format) with a `## [1.0.0] - <release date>` entry listing
   the six tools, offline/PWA support, the size limit and the port from the Bun server.
 - README states the current version and links the changelog.
+- `docs/todo.md` lists every manual check the owner must do (browser, offline, phone). The release
+  does not start until every box in it is ticked.
 - Release steps (each needs the owner's go-ahead, since they publish or touch `main`): open a PR from
   `port-vite-wasm` to `main`; after it merges, tag the merge commit `v1.0.0` and push the tag; build
   `dist/`, zip it as `pdf-toolbox-1.0.0.zip`, and create the GitHub release `v1.0.0` with the

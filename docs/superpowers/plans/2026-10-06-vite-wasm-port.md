@@ -53,6 +53,7 @@ shadcn (new-york) on Radix, `@mssio/qpdf-wasm` 1.0.0, `vite-plugin-pwa` 2.0, Vit
 - Code style in `src/`: double quotes, semicolons, 2-space indent (matches the ported old app). Root config files (`vite.config.ts`, `eslint.config.js`, `pwa-assets.config.ts`) keep the scaffold's single quotes and no semicolons.
 - Import alias `@/` → `src/`. Imports from React Router use `react-router` (and `react-router/dom` for `RouterProvider`), never `react-router-dom`.
 - User-facing copy is exactly as written in the spec and this plan.
+- `docs/todo.md` lists the owner's manual checks per task. When a task completes, the controller changes that task's section heading from `(not ready yet)` to `(ready)`. Release (Task 13) is blocked until every box is ticked.
 - Commit after every task and push immediately (`git push`); the branch is `port-vite-wasm`. End every commit message with:
   ```
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
@@ -4008,6 +4009,16 @@ git push
 - Produces: PR to `main`, tag `v1.0.0`, GitHub release `v1.0.0` with `pdf-toolbox-1.0.0.zip`.
 
 Steps 2–4 publish or change `main`. **Ask the owner before each one** and wait for a yes.
+
+- [ ] **Step 0: Owner checks gate**
+
+`docs/todo.md` holds the owner's manual checks. The release does not start while any box is unticked:
+
+```bash
+grep -n -- '- \[ \]' docs/todo.md && echo "STOP: unticked owner checks" || echo "all owner checks ticked"
+```
+
+Expected: `all owner checks ticked`. Otherwise stop and list the unticked lines for the owner.
 
 - [ ] **Step 1: Changelog**
 
