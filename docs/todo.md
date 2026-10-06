@@ -44,7 +44,7 @@ Also keep one real-world PDF of your own handy.
 - [ ] `protected.pdf` → "This PDF is password-protected. Remove its password with Decrypt first." and the "Go to Decrypt" link works.
 - [ ] `restricted.pdf` → succeeds.
 
-## Task 6: Merge (not ready yet)
+## Task 6: Merge (ready)
 
 - [ ] Adding files in two batches appends them; up/down/remove work; up is disabled on the first row, down on the last.
 - [ ] `plain.pdf` + `restricted.pdf` → "2 files, 7 pages." plus the note that restrictions aren't kept; `merged.pdf` has the pages in the chosen order.
