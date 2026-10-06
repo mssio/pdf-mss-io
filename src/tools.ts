@@ -1,4 +1,4 @@
-import { FileKey2, type LucideIcon } from "lucide-react";
+import { FileKey2, FileLock2, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 
 export type Tool = {
@@ -24,5 +24,14 @@ export const tools: Tool[] = [
     description: "Remove password protection from a PDF, right in your browser with qpdf.",
     icon: FileKey2,
     load: () => import("@/pages/DecryptPage"),
+  },
+  {
+    id: "encrypt",
+    path: "/encrypt",
+    title: "Encrypt PDF",
+    navLabel: "Encrypt",
+    description: "Add a password and choose permissions for printing, editing and copying.",
+    icon: FileLock2,
+    load: () => import("@/pages/EncryptPage"),
   },
 ];

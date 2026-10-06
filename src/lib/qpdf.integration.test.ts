@@ -2,6 +2,7 @@ import { createQpdf, type Qpdf } from "@mssio/qpdf-wasm";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { assertOutput, describeQpdfError, ensureNoOpenPassword, PasswordProtectedError } from "@/lib/qpdf";
+import { generateOwnerPassword } from "@/lib/passwords";
 import { makePdf } from "@/test/make-pdf";
 
 let qpdf: Qpdf;
@@ -65,5 +66,32 @@ describe("ensureNoOpenPassword", () => {
   test("passes through non-PDF errors", async () => {
     const error = await ensureNoOpenPassword(qpdf, pdfFile(new TextEncoder().encode("hello"))).catch((e: unknown) => e);
     expect(describeQpdfError(error, "run").message).toBe("This file isn't a readable PDF.");
+  });
+});
+
+describe("encrypt", () => {
+  test("protects with AES-256 and the chosen permissions", async () => {
+    const { output } = await qpdf.encrypt(pdfFile(makePdf(2)), {
+      userPassword: "new-pass",
+      ownerPassword: generateOwnerPassword(),
+      allow: { print: false, modify: true, extract: true, annotate: true },
+    });
+    assertOutput(output);
+    await expect(qpdf.info(output.slice())).rejects.toMatchObject({ code: "INVALID_PASSWORD" });
+    const json = await qpdf.run(["--password=new-pass", "--json", "--json-key=encrypt", "in.pdf"], {
+      files: { "in.pdf": output.slice() },
+    });
+    const encrypt = JSON.parse(json.stdout).encrypt;
+    expect(encrypt.parameters.method).toBe("AESv3");
+    expect(encrypt.capabilities.printhigh).toBe(false);
+    expect(encrypt.capabilities.extract).toBe(true);
+  });
+
+  test("re-protects a restriction-only PDF", async () => {
+    const { output } = await qpdf.encrypt(pdfFile(await restrictionOnly()), {
+      userPassword: "fresh",
+      ownerPassword: generateOwnerPassword(),
+    });
+    expect((await qpdf.info(output.slice(), { password: "fresh" })).encrypted).toBe(true);
   });
 });
