@@ -32,7 +32,8 @@ that referred to the server changes.
 Verified with throwaway probes against the real package (Node, 2026-10-06): merge, select pages,
 encrypt (AES-256/128, owner-only), compress, info, `run(["--json", ...])` all work. Memory: merge
 handled 1 GB; encrypt succeeded at 300 MB, threw `std::bad_alloc` at 400–500 MB, and at ≥600 MB
-**resolved with a near-empty output** (package bug, to be reported upstream; the app guards against it).
+**resolved with a near-empty output** (reproduced with valid PDFs; package or qpdf-in-wasm issue, to be reported upstream; the app guards
+against it). Compress handled 400 MB and merge 600 MB in the same run.
 
 ## 1. Architecture and layout
 
@@ -106,8 +107,9 @@ On `INVALID_PASSWORD` they show a password field for that file (inline, focused)
 "This PDF is password-protected. Enter its password." and the user resubmits. Decrypt and Encrypt
 have their password fields from the start.
 
-**Output encryption:** outputs of Merge/Extract/Compress keep the input's encryption (qpdf default;
-for Merge, the first file's). An integration test asserts this so a package change is noticed.
+**Output encryption** (verified 2026-10-06): Extract and Compress keep the input's encryption (qpdf
+default). Merge output is **never** encrypted (the package builds it from an empty PDF). Integration
+tests assert both so a package change is noticed.
 
 **Errors** (`describeQpdfError(error, phase)` → `{ message, detail? }`, shown in `ErrorBox`):
 
@@ -180,7 +182,8 @@ Same form and copy as before except:
   one fails).
 - Total size and file count shown under the list; size policy applies to the total.
 - "Merge" enabled with ≥ 2 files. Call `merge(files, { password: perFilePasswords })`.
-- Result note: "N files, P pages." (P from `info(output)`).
+- Result note: "N files, P pages." (P from `info(output)`). If any input was password-protected, an
+  `Alert` adds: "The merged PDF isn't password-protected. Use Encrypt to protect it." with a link to `/encrypt`.
 
 ### Extract pages (`/extract`)
 - After a file is chosen, call `info(file)` and show "This PDF has N pages." (or the password
@@ -269,7 +272,7 @@ finishing.
   where needed):
   - decrypt right password → not encrypted; wrong → `INVALID_PASSWORD`.
   - encrypt with permissions → `info` with password shows encrypted; capabilities match.
-  - merge 3+2 pages → 5; merge with an encrypted input + its password works and stays encrypted.
+  - merge 3+2 pages → 5; merge with an encrypted input + its password works and the output is NOT encrypted.
   - selectPages `1,4-z` on 5 pages → 3; invalid range → `FAILED` mapped to generic message.
   - compress returns a valid PDF; output of encrypted input stays encrypted.
   - `parseQpdfJson` on live `run --json` output for a PDF with Info dict.
