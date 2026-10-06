@@ -58,7 +58,7 @@ Also keep one real-world PDF of your own handy.
 - [ ] Pages `abc` → "Enter pages like 1-3,7 or 5-z."; pages `9` → "Could not process this PDF." with "out of range" detail.
 - [ ] `protected.pdf` → password-protected error with the Decrypt link.
 
-## Task 8: Compress (not ready yet)
+## Task 8: Compress (ready)
 
 - [ ] `plain.pdf` → "Your PDF is smaller" with before → after and a percentage; the download opens.
 - [ ] Compressing that downloaded file again → "No smaller version", the qpdf note, and no download button.
