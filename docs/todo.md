@@ -27,7 +27,7 @@ Also keep one real-world PDF of your own handy.
 - [ ] The browser tab shows the new favicon (dark tile, white document, open padlock) in light and dark browser themes.
 - [ ] The page looks like the old app (fonts, background glow, card style).
 
-## Task 4: Decrypt (not ready yet)
+## Task 4: Decrypt (ready)
 
 - [ ] Header shows a "Decrypt" link on a wide window; home shows the Decrypt card.
 - [ ] `protected.pdf` with a wrong password → "Incorrect password. Check it and try again."
