@@ -1,7 +1,7 @@
 # PDF Toolbox: static Vite + WASM app
 
 Date: 2026-10-06
-Status: approved in conversation, pending written-spec review
+Status: approved; revised 2026-10-06 (latest stable versions, unencrypted-only tools)
 
 ## Goal
 
@@ -23,66 +23,96 @@ that referred to the server changes.
 | Hosting | Static `dist/` only. No Docker, no `bin/build.sh`; the owner hosts it. |
 | Server features | Dropped: 15-minute download links, cleanup timers/cron, 40 MB upload limit. |
 | Routing | Clean URLs via `createBrowserRouter`. Hosts must rewrite unknown paths to `/index.html` (documented). Once the service worker is installed it serves `index.html` for navigations itself. |
-| PDF engine | `@mssio/qpdf-wasm` 0.1.x (qpdf 12.4.2). It owns the Web Worker; the app does not write its own. |
+| PDF engine | `@mssio/qpdf-wasm` (qpdf 12.4.2). It owns the Web Worker; the app does not write its own. |
+| Encrypted input | **Only Decrypt accepts encrypted PDFs.** Every other tool rejects any encrypted input (with or without an open password) and points to Decrypt. No password fields outside Decrypt. |
 | Offline | PWA via `vite-plugin-pwa`: installable, works offline after the first online visit. |
 | Size policy | 250 MB combined input hard limit for every tool; warning above 100 MB on phones (section 3). |
-| UI library | shadcn only (no Catalyst / other kits). Old look kept; added shadcn `checkbox`, `alert`, `badge`, `separator`. Non-error notices (phone warning, "already protected", compress "already small") use `Alert`. |
+| UI library | shadcn only (no Catalyst / other kits). Old look kept; added shadcn `checkbox`, `alert`, `badge`, `separator`. Non-error notices use `Alert`. |
+| Versions | Latest stable of every package (section 1), verified to build, lint and test together on 2026-10-06. |
+| Runtime | Node 24 LTS (`.nvmrc` = `24`, `engines.node` = `>=24`). Node 25 is end-of-life and Vitest 5 doesn't support it. |
 | Package manager | npm. |
 
-Verified with throwaway probes against the real package (Node, 2026-10-06): merge, select pages,
-encrypt (AES-256/128, owner-only), compress, info, `run(["--json", ...])` all work. Memory: merge
-handled 1 GB; encrypt succeeded at 300 MB, threw `std::bad_alloc` at 400–500 MB, and at ≥600 MB
-**resolved with a near-empty output** (reproduced with valid PDFs; package or qpdf-in-wasm issue, to be reported upstream; the app guards
-against it). Compress handled 400 MB and merge 600 MB in the same run.
+Verified with throwaway probes against the real package (Node, 2026-10-06), using valid PDFs:
+merge, select pages, encrypt (AES-256/128, owner-only), compress, info and `run(["--json", ...])`
+all work. Merge output is never encrypted. PDFs encrypted with only an owner password report
+`encrypted: true` but open without a password, and `decrypt(file, { password: "" })` removes their
+restrictions. Memory: compress handled 400 MB and merge 600 MB; encrypt succeeded at 300 MB, threw
+`std::bad_alloc` at 400 MB, and at 600 MB **resolved with a near-empty output** (package or
+qpdf-in-wasm issue, to be reported upstream; the app guards against it).
 
 ## 1. Architecture and layout
 
-**Stack:** Vite 8, React 19, TypeScript (scaffold, React Compiler preset kept), React Router 7
-(`createBrowserRouter` + `RouterProvider`), Tailwind 4 via `@tailwindcss/vite`, `tw-animate-css`,
-shadcn "new-york" primitives, `lucide-react`, `clsx`, `tailwind-merge`, `class-variance-authority`,
-`@radix-ui/react-slot`, `@radix-ui/react-label`, `@radix-ui/react-checkbox`, `@radix-ui/react-separator`, `@mssio/qpdf-wasm`, `vite-plugin-pwa`, Vitest.
+**Versions** (latest stable on 2026-10-06; installed with `^`):
+
+| Package | Version | Note |
+|---|---|---|
+| react, react-dom | 19.3.0 | |
+| react-router | 8.4.0 | v8 needs React ≥ 19.2.7 and Node ≥ 22.22 |
+| vite | 8.3.3 | |
+| @vitejs/plugin-react | 6.1.2 | React Compiler preset kept from the scaffold |
+| @rolldown/plugin-babel / @babel/core / babel-plugin-react-compiler | 0.2.4 / 8.0.6 / 1.0.0 | |
+| tailwindcss, @tailwindcss/vite | 4.3.3 | |
+| tw-animate-css | 1.4.0 | |
+| vite-plugin-pwa / @vite-pwa/assets-generator | 2.0.0 / 2.0.0 | |
+| vitest | 5.0.3 | needs Node 22.12+, 24 or 26+ |
+| typescript | 6.0.3 | **not 7.0.2**: typescript-eslint 8.71.1 supports TypeScript < 6.1 only |
+| eslint / @eslint/js / typescript-eslint | 10.12.0 / 10.0.1 / 8.71.1 | |
+| eslint-plugin-react-hooks / eslint-plugin-react-refresh / globals | 7.1.1 / 0.5.7 / 17.13.0 | |
+| @types/react, @types/react-dom | 19.3.0 | |
+| @types/node | ^24 | matches the Node 24 runtime, not the latest 26.x |
+| @mssio/qpdf-wasm | 0.1.0 | |
+| lucide-react / clsx / tailwind-merge / class-variance-authority | 1.52.0 / 2.1.1 / 3.7.0 / 0.7.1 | |
+| @radix-ui/react-slot / -label / -checkbox / -separator | 1.4.0 / 2.1.16 / 1.3.12 / 1.1.16 | |
 
 **Path alias:** `@/*` → `src/*` (tsconfig `paths` + Vite `resolve.alias`).
 
 ```
+.nvmrc                      24
 index.html                  title "PDF Toolbox", inline no-flash theme script, favicon + PWA links
 public/favicon.svg          new icon (source for all PWA icons)
 pwa-assets.config.ts        icon generation config (@vite-pwa/assets-generator)
 src/main.tsx                createRoot + RouterProvider + PWA registration
-src/router.tsx              AppShell layout route; "/" HomePage; each tool route lazy-loaded
-src/tools.ts                tool registry: id, path, title, short description, icon (drives home grid + nav)
+src/router.tsx              AppShell layout route; "/" HomePage; one lazy route per tool
+src/tools.ts                tool registry: id, path, title, nav label, description, icon, lazy loader
 src/index.css               ported (background gradients)
 src/styles/globals.css      ported unchanged (theme tokens, light/dark)
 src/components/AppShell.tsx         ported; nav from registry; footer copy changed
-src/components/PdfFileDropzone.tsx  ported; gains `multiple` mode (section 2)
-src/components/ToolPage.tsx         shared tool layout: title, intro, form card, error box
+src/components/PdfFileDropzone.tsx  ported look; controlled; gains `multiple` mode
+src/components/ToolPage.tsx         shared tool layout: title, intro, card
 src/components/ResultCard.tsx       shared success card: download button, notes, "another"/"home"
-src/components/ErrorBox.tsx         the old red error paragraph, with optional muted detail line (kept as-is to match the old UI)
-src/components/ui/{button,card,input,label}.tsx  ported shadcn, unchanged
-src/components/ui/{checkbox,alert,badge,separator}.tsx  added from shadcn (new-york), same tokens
+src/components/ErrorBox.tsx         the old red error paragraph, optional muted detail and Decrypt link
+src/components/SizeNotice.tsx       over-limit error or phone warning for the selected total
+src/components/ui/{button,card,input,label}.tsx           ported shadcn, unchanged
+src/components/ui/{checkbox,alert,badge,separator}.tsx    added from shadcn (new-york), same tokens
 src/lib/utils.ts            cn()
 src/lib/theme.ts            THEME_STORAGE_KEY = "pdf-mss-io-theme" (same key as old app)
 src/lib/use-theme.ts        ported unchanged
-src/lib/qpdf.ts             getQpdf() lazy singleton; describeQpdfError(); assertOutput()
+src/lib/qpdf.ts             getQpdf(), ensureUnencrypted(), describeQpdfError(), assertOutput()
+src/lib/use-qpdf-job.ts     busy/error state for one qpdf job; ignores results after reset/unmount
+src/lib/use-blob-url.ts     owns one blob URL; revokes on replace/clear/unmount
 src/lib/limits.ts           MAX_TOTAL_BYTES, PHONE_WARN_BYTES, checkSize(), isLikelyPhone()
-src/lib/filename.ts         outputFilename(name, suffix): "a.pdf" + "-d" → "a-d.pdf"
-src/lib/format.ts           formatBytes(), formatPdfDate()
+src/lib/pdf-files.ts        isPdfFile(), pickPdfFiles()
+src/lib/filename.ts         outputFilename(name, suffix)
+src/lib/format.ts           formatBytes(), sizeChange(), parsePdfDate()
+src/lib/page-ranges.ts      normalizePageRanges()
+src/lib/passwords.ts        generateOwnerPassword(), validateNewPassword()
+src/lib/merge-list.ts       merge file-list reducer (add, move, remove)
 src/lib/pdf-info.ts         parseQpdfJson(): qpdf --json → PdfDetails
-src/lib/use-blob-url.ts     owns a blob URL; revokes on replace/reset/unmount
-src/pages/HomePage.tsx      hero kept; grid of tool cards from registry
+src/pages/HomePage.tsx      hero kept; grid of tool cards from the registry
 src/pages/{Decrypt,Encrypt,Merge,Extract,Compress,Info}Page.tsx
+src/test/make-pdf.ts        builds valid PDFs in memory for tests
 ```
 
 Scaffold leftovers removed: `src/App.tsx`, `src/App.css`, `src/assets/*`, `public/icons.svg`,
 old `public/favicon.svg`. Old `select`/`textarea` UI files are not ported (unused).
 
-**Loading:** every tool route is lazy (`lazy` in the route object). `getQpdf()` dynamically
-imports `@mssio/qpdf-wasm` and calls `createQpdf()` once, caching the promise; if creation rejects
-the cache is cleared so the next attempt retries. The home page never downloads qpdf.
+**Loading:** every tool route is lazy. `getQpdf()` dynamically imports `@mssio/qpdf-wasm` and calls
+`createQpdf()` once, caching the promise; if creation rejects the cache is cleared so the next
+attempt retries. The home page never downloads qpdf.
 
-**Navigation:** header keeps logo + Home + theme toggle. With six tools, tool links move into a
-"Tools" area: inline links on ≥ md screens, and the home grid is the primary navigation on phones
-(no hamburger menu). Header links and home cards both come from `src/tools.ts`.
+**Navigation:** header keeps logo + Home + theme toggle. Tool links show inline on ≥ md screens; on
+phones the home grid is the navigation (no hamburger menu). Header links, home cards and routes all
+come from `src/tools.ts`.
 
 **Home page:** hero and "Privacy-focused PDF utilities" badge kept; copy becomes "Simple, focused
 tools for everyday PDF tasks, running entirely in your browser." Grid of six tool cards in the old
@@ -93,44 +123,43 @@ decrypt-card style (icon tile, title, description, "Open tool"). The "More soon"
 Every tool page uses `ToolPage` + `ResultCard` and follows the old decrypt flow:
 
 1. Choose file(s) via `PdfFileDropzone` (drag/drop or click; non-PDFs rejected: "File must be a PDF.").
-2. Size check (section 3) runs as soon as files are chosen and again on submit.
-3. Submit → busy state on the button (spinner + "-ing…" label) → `const qpdf = await getQpdf()`
-   → helper call → `assertOutput(result)` → blob URL via `useBlobUrl` → `ResultCard`.
+2. Size check (section 3) runs as soon as files are chosen; submit is disabled over the limit.
+3. Submit → busy state on the button (spinner + "-ing…" label) → `getQpdf()` →
+   (every tool except Decrypt) `ensureUnencrypted(qpdf, file)` for each input → helper call →
+   `assertOutput(output)` → blob URL via `useBlobUrl` → `ResultCard`.
 4. `ResultCard` has: primary download `<a download=...>`, tool-specific notes, "Back to home",
-   and "<Tool> another file". The blob URL is revoked on "another", on replacement, and on unmount.
+   and "<Verb> another file". The blob URL is revoked on "another", on replacement, and on unmount.
 
-**Inputs passed to qpdf are `File` objects** (copied to the worker, never detached), so retries
-with a different password reuse the same `File`.
+**Inputs passed to qpdf are `File` objects** (copied to the worker, never detached), so a retry
+reuses the same `File`.
 
-**Passwords for protected inputs:** Merge, Extract, Compress and Info first try without a password.
-On `INVALID_PASSWORD` they show a password field for that file (inline, focused) with the message
-"This PDF is password-protected. Enter its password." and the user resubmits. Decrypt and Encrypt
-have their password fields from the start.
+**Encrypted inputs (all tools except Decrypt):** `ensureUnencrypted(qpdf, file)` calls
+`qpdf.info(file)` with no password. If it rejects with `INVALID_PASSWORD` (needs an open password)
+or resolves with `encrypted: true` (owner-password restrictions), it throws `EncryptedPdfError`.
+The page shows: "This PDF is encrypted. Remove its password with Decrypt first." with a
+"Go to Decrypt" link. Merge names the file: "“name.pdf” is encrypted. Remove its password with
+Decrypt first."
 
-**Output encryption** (verified 2026-10-06): Extract and Compress keep the input's encryption (qpdf
-default). Merge output is **never** encrypted (the package builds it from an empty PDF). Integration
-tests assert both so a package change is noticed.
-
-**Errors** (`describeQpdfError(error, phase)` → `{ message, detail? }`, shown in `ErrorBox`):
+**Errors** (`describeQpdfError(error, phase)` → `{ message, detail?, decryptFirst? }`, shown in `ErrorBox`):
 
 | Cause | Message |
 |---|---|
 | No / empty file | Choose a PDF file. |
 | Dropped non-PDF | File must be a PDF. |
 | Size over limit | Files must be 250 MB or less in total (you selected X). |
-| Required password empty | Password is required. |
-| `INVALID_PASSWORD` (decrypt) | Incorrect password. Check it and try again. |
-| `INVALID_PASSWORD` (other tools) | This PDF is password-protected. Enter its password. / Incorrect password. (on retry) |
+| `EncryptedPdfError` | This PDF is encrypted. Remove its password with Decrypt first. (+ link) |
+| `INVALID_PASSWORD` in Decrypt | Incorrect password. Check it and try again. |
 | `INVALID_PDF` | This file isn't a readable PDF. |
-| `getQpdf()` rejects | Couldn't load the PDF engine. Check your connection and reload. |
-| Out of memory (`FAILED` with `bad_alloc`, `out of memory`, `Aborted`, `qpdf crashed`, worker died) | Not enough memory to process this on this device. Try a smaller file or a computer. |
-| `assertOutput` fails (empty or < 64 bytes, or no `%PDF-` header) | Same out-of-memory message (this is how the package's large-file bug surfaces). |
-| Any other `FAILED` | Could not process this PDF. (+ `error.message` as muted detail) |
+| `getQpdf()` rejects (phase `load`) | Couldn't load the PDF engine. Check your connection and reload. |
+| Out of memory (`FAILED` whose message contains `bad_alloc`, `out of memory`, `Aborted` or `qpdf crashed`) | Not enough memory to process this on this device. Try a smaller file or a computer. |
+| `assertOutput` fails (fewer than 64 bytes, or no `%PDF-` header) | Same out-of-memory message (this is how the package's large-file issue surfaces). |
+| Any other error | Could not process this PDF. (+ `error.message` as muted detail) |
 
-`warnings` from successful jobs are not shown (qpdf repairs are routine); they are logged to the
-console.
+`warnings` from successful jobs are not shown (qpdf repairs are routine); they are logged with
+`console.warn`.
 
-**Output filenames** (`outputFilename`, old `-d` rule generalized; empty/odd names → `document`):
+**Output filenames** (`outputFilename(name, suffix)`, old `-d` rule generalized; a name that is
+empty after trimming becomes `document`):
 
 | Tool | Output |
 |---|---|
@@ -143,8 +172,8 @@ console.
 ## 3. Size policy
 
 - `MAX_TOTAL_BYTES = 250 * 1024 * 1024`, applied to the sum of all selected inputs in every tool.
-  Over the limit: error shown immediately, submit disabled.
-- `PHONE_WARN_BYTES = 100 * 1024 * 1024`. If `isLikelyPhone()` and total > 100 MB: amber `Alert` notice
+  Exactly 250 MB is allowed. Over the limit: error shown immediately, submit disabled.
+- `PHONE_WARN_BYTES = 100 * 1024 * 1024`. If `isLikelyPhone()` and total > 100 MB: amber `Alert`
   (not blocking): "Large files may fail on phones. If it doesn't work, try a computer."
 - `isLikelyPhone()`: `navigator.deviceMemory <= 4` when available (Chromium), otherwise
   `matchMedia("(pointer: coarse) and (max-width: 820px)")`.
@@ -159,132 +188,120 @@ Same form and copy as before except:
 - Intro: "Upload an encrypted PDF and enter its password. Decryption runs entirely in your browser
   with `qpdf` compiled to WebAssembly. Your file never leaves your device."
 - Card note (amber shield kept): "Your file and password stay on this device. Nothing is uploaded."
+- Password field is **optional**: label "Password", placeholder "Document open password", help text
+  "Leave empty if the PDF opens without a password but has restrictions." Empty → `password: ""`.
+  This is the only way to handle restriction-only PDFs, which every other tool rejects.
 - Result: "Decrypted in your browser. Download it now; the file isn't stored anywhere."
 - Unencrypted input is allowed (qpdf returns a copy).
 
 ### Encrypt (`/encrypt`)
-- Fields: PDF; "Password to open" + "Confirm password" (required, must match: "Passwords don't match.").
-- "Permissions" section (checkboxes, all checked by default): Allow printing, Allow editing,
-  Allow copying text and images, Allow comments and form filling → `allow.{print,modify,extract,annotate}`.
-- Owner password: not shown. Generated per run with `crypto.getRandomValues` (32 bytes, base64url) so
-  permissions are enforced; the user is told the permissions can't be changed later without
-  re-encrypting the original.
+- Fields: PDF; "Password to open" + "Confirm password" (`validateNewPassword`: empty → "Password is
+  required."; mismatch → "Passwords don't match.").
+- "Permissions" (checkboxes, all checked by default): Allow printing, Allow editing, Allow copying
+  text and images, Allow comments and form filling → `allow.{print,modify,extract,annotate}`.
+- Owner password: not shown. `generateOwnerPassword()` per run (32 random bytes, base64url) so
+  permissions are enforced. Note under the permissions: "Permissions can't be changed later without
+  the original file."
 - AES-256 (package default). No AES-128 option.
-- Already-encrypted input: on `INVALID_PASSWORD` show "This PDF is already protected. Decrypt it first."
-  with a link to `/decrypt`.
+- Encrypted input → `EncryptedPdfError` (shared rule).
 
 ### Merge (`/merge`)
 - Dropzone in `multiple` mode: each drop/pick **appends** to the list (duplicates allowed).
-- List rows: index, file name, size, Move up / Move down buttons, Remove button (all keyboard
+- List rows: position, file name, size, Move up / Move down buttons, Remove button (keyboard
   accessible, with aria-labels). No drag-to-reorder library.
-- Row shows an inline password field when that file needs one (after `INVALID_PASSWORD`; the error
-  is attributed to the file by calling `info(file)` on each file without a password, in order, until
-  one fails).
 - Total size and file count shown under the list; size policy applies to the total.
-- "Merge" enabled with ≥ 2 files. Call `merge(files, { password: perFilePasswords })`.
-- Result note: "N files, P pages." (P from `info(output)`). If any input was password-protected, an
-  `Alert` adds: "The merged PDF isn't password-protected. Use Encrypt to protect it." with a link to `/encrypt`.
+- "Merge" enabled with ≥ 2 files. Each file is checked with `ensureUnencrypted` in list order; the
+  first encrypted one is named in the error. Then `merge(files)`.
+- Result note: "N files, P pages." (P from `info(output)`).
 
 ### Extract pages (`/extract`)
-- After a file is chosen, call `info(file)` and show "This PDF has N pages." (or the password
-  prompt if protected).
+- After a file is chosen, run `ensureUnencrypted` + `info(file)` and show "This PDF has N pages."
+  (or the shared error).
 - Field "Pages" (required) with help text: "Examples: `1-3`, `1,4,7`, `5-z` (z = last page)."
-  Client-side validation regex: `^\s*(\d+|z)(\s*-\s*(\d+|z))?(\s*,\s*(\d+|z)(\s*-\s*(\d+|z))?)*\s*$`
-  → "Enter pages like 1-3,7 or 5-z." Bounds are left to qpdf; its error message is shown as detail.
-- Call `selectPages(file, ranges)`. Result note: "Extracted P pages."
+  `normalizePageRanges` removes spaces and lower-cases `Z`, then validates against
+  `^(\d+|z)(-(\d+|z))?(,(\d+|z)(-(\d+|z))?)*$`; invalid → "Enter pages like 1-3,7 or 5-z." Bounds
+  are left to qpdf; its message is shown as detail (e.g. "number 9 out of range").
+- Call `selectPages(file, normalized)`. Result note: "Extracted P pages."
 
 ### Compress (`/compress`)
 - Single file, no options (level 9 fixed).
-- Result shows "Before → After (−X%)" using `formatBytes`.
-- If output ≥ input: no download; ResultCard shows "This PDF is already as small as qpdf can make it.
-  qpdf compresses the PDF's structure but doesn't shrink images." with "Compress another file".
+- Result shows "Before → After (−X%)" using `formatBytes` and `sizeChange`.
+- If output ≥ input: no download; ResultCard shows an `Alert`: "This PDF is already as small as qpdf
+  can make it. qpdf compresses the PDF's structure but doesn't shrink images."
 - Intro sets expectations: "Repacks and recompresses the PDF's internal data. Works best on
   text-heavy PDFs; scanned or photo-heavy files shrink little."
 
 ### Info (`/info`)
-- Single file; shows details instead of a download. No `ResultCard` download button; "Inspect
-  another file" and "Back to home" only.
-- Data: `run(["--json", "--json-key=pages", "--json-key=encrypt", "--json-key=attachments",
-  "--json-key=qpdf", "in.pdf"])` (plus `--password=…` when given); treat exit 0 and 3 as success.
-  `parseQpdfJson` extracts:
+- Single file; shows details instead of a download. Buttons: "Inspect another file" and "Back to home".
+- Encrypted input → `EncryptedPdfError` (shared rule).
+- Data: `info(file)` for PDF version and page count; `run(["--json", "--json-key=pages",
+  "--json-key=attachments", "--json-key=qpdf", "in.pdf"])` (exit 0 or 3 = success);
+  `run(["--check-linearization", "in.pdf"])` exit 0 → linearized. `parseQpdfJson` extracts:
   - Document info from the trailer `/Info` object (`qpdf[1]["obj:<ref>"].value`): Title, Author,
     Subject, Keywords, Creator, Producer, CreationDate, ModDate. Strings are `u:`-prefixed in qpdf
-    JSON v2; dates formatted from `D:YYYYMMDDHHmmSS…`.
-  - PDF version (`info()`), page count, file size.
-  - Page size of page 1 in mm and inches, with a named size when it matches (A4, Letter, Legal,
-    A3, A5) within 2 pt; "Mixed sizes" if any page differs. `/MediaBox` may be inherited: walk
-    `/Parent` until found.
-  - Encryption: encrypted yes/no, method (`AESv3` → "AES-256", `AESv2` → "AES-128", `RC4` → "RC4"),
-    and the permissions from `encrypt.capabilities` (print, modify, extract, annotate/forms).
-  - Attachments: count and names (from `attachments`).
-  - Linearized ("fast web view"): `run(["--check-linearization", "in.pdf"])` exit 0 → yes.
-- Displayed as a definition list in a card, grouped: Document, Pages, Security, Other. Groups are split
-  by `Separator`; "Encrypted", the method (e.g. "AES-256") and "Linearized" render as `Badge`s. Missing
-  values are omitted, not shown as empty.
+    JSON v2 (`b:` binary strings are skipped); dates parsed from `D:YYYYMMDDHHmmSS[Z|±HH'mm']`.
+  - Page size of page 1 in mm and inches, with a named size when it matches A4, Letter, Legal, A3
+    or A5 within 2 pt (either orientation, "landscape" noted); "Mixed sizes" if any page differs.
+    `/MediaBox` may be inherited: walk `/Parent` until found; references are resolved.
+  - Attachments: count and names (`preferredname`, falling back to the key).
+- Displayed in a card, grouped Document / Pages / Other, groups split by `Separator`. "Linearized"
+  shows as a `Badge`. Missing values are omitted, not shown as empty.
 
 ## 5. PWA and offline
 
-- `vite-plugin-pwa` v2, `generateSW`, `registerType: "autoUpdate"`, registered from `main.tsx` via
+- `vite-plugin-pwa`, `generateSW`, `registerType: "autoUpdate"`, registered from `main.tsx` via
   `virtual:pwa-register`.
 - Manifest: name and short_name "PDF Toolbox", `display: "standalone"`, `start_url: "/"`,
-  theme/background colors from the light theme tokens.
+  `theme_color` and `background_color` `#ffffff`.
 - Icons generated from `public/favicon.svg` by `@vite-pwa/assets-generator` (minimal 2023 preset):
-  64/192/512 px, 512 maskable, 180 px `apple-touch-icon`. Generated PNGs are committed.
+  64/192/512 px, 512 maskable, 180 px `apple-touch-icon`, `favicon.ico`. Generated files are committed.
 - Workbox: `globPatterns: ["**/*.{js,css,html,svg,png,ico,wasm,webmanifest}"]`,
   `maximumFileSizeToCacheInBytes: 3_000_000` (qpdf.wasm ~2.2 MB > 2 MiB default),
   `navigateFallback: "/index.html"`. All lazy tool chunks, the qpdf worker script and the wasm
-  are precached.
+  are precached (verified in a prototype build).
 - First visit must be online; afterwards everything works offline. New deployments activate on the
   next online launch; no update prompt.
 
 ## 6. Favicon and docs
 
-**Favicon:** hand-written `public/favicon.svg`: rounded square in the app's primary color, white
-document with folded corner and an open padlock. Flat shapes, legible at 16 px.
+**Favicon:** hand-written `public/favicon.svg`: rounded square in the app's primary color (#171717),
+white document with folded corner and an open padlock. Flat shapes, legible at 16 px (checked).
 
-**README.md** (rewrite): what it is, the six tools, privacy model, stack, scripts (`dev`, `build`,
-`preview`, `test`, `lint`), size limits and why, hosting `dist/` (SPA fallback snippets: nginx
-`try_files`, Netlify/Cloudflare Pages `_redirects`, Caddy `try_files`, GitHub Pages `404.html`
-copy), `.wasm` as `application/wasm`, `Cache-Control: no-cache` for `index.html` and `sw.js`, CSP
-needs (`script-src 'wasm-unsafe-eval'`, `worker-src 'self'`), how to add a tool.
+**README.md** (rewrite): what it is, the six tools, privacy model, the encrypted-input rule, stack,
+Node 24 requirement, scripts (`dev`, `build`, `preview`, `test`, `lint`, `icons`), size limits and
+why, hosting `dist/` (SPA fallback snippets: nginx `try_files`, Netlify/Cloudflare Pages
+`_redirects`, Caddy `try_files`, GitHub Pages `404.html` copy), `.wasm` as `application/wasm`,
+`Cache-Control: no-cache` for `index.html` and `sw.js`, CSP needs (`script-src 'wasm-unsafe-eval'`,
+`worker-src 'self'`), how to add a tool.
 
 **AGENTS.md** (new), plus `CLAUDE.md` containing only `@AGENTS.md`: purpose and hard constraints
-(static only, no backend, files never leave the browser, offline must keep working), file map,
-qpdf rules (use `getQpdf()`; pass `File`s; map errors with `describeQpdfError`; always
-`assertOutput`; revoke blob URLs via `useBlobUrl`), size policy location, UI conventions (shadcn in
-`components/ui`, `cn()`, tokens in `globals.css`, theme script key), recipe for adding a tool
-(registry entry + lazy route + page on `ToolPage`/`ResultCard` + tests), PWA notes (precache size
-limit, update behavior), known package issue (large-input empty output), commands to run before
-finishing.
+(static only, no backend, files never leave the browser, offline must keep working, only Decrypt
+accepts encrypted PDFs), file map, qpdf rules (use `getQpdf()`; pass `File`s; `ensureUnencrypted`
+first; map errors with `describeQpdfError`; always `assertOutput`; blob URLs via `useBlobUrl`), size
+policy location, UI conventions, recipe for adding a tool, PWA notes, version notes (TypeScript held
+at 6.0 for typescript-eslint; Node 24), known package issue, commands to run before finishing.
 
 ## 7. Testing
 
-**Vitest, Node environment:**
-- `filename.test.ts`: `outputFilename` for `a.pdf`, `a.b.PDF`, no extension, trailing dot,
-  leading-dot names, paths with `/` and `\`, empty/whitespace → `document-<suffix>.pdf`.
-- `qpdf.test.ts`: `describeQpdfError` for each code, phase and out-of-memory pattern;
-  `assertOutput` rejects empty, tiny and non-`%PDF-` outputs.
-- `limits.test.ts`: `checkSize` at, below and above the limit.
-- `pdf-info.test.ts`: `parseQpdfJson` on JSON captured from the real package (fixture file is
-  qpdf's JSON text, not a PDF): doc info, `u:` strings, dates, inherited MediaBox, named sizes,
-  mixed sizes, encryption method and permissions, attachments.
-- `qpdf.integration.test.ts` (real package, inline in Node; PDFs built in-memory, then encrypted
-  where needed):
-  - decrypt right password → not encrypted; wrong → `INVALID_PASSWORD`.
-  - encrypt with permissions → `info` with password shows encrypted; capabilities match.
-  - merge 3+2 pages → 5; merge with an encrypted input + its password works and the output is NOT encrypted.
-  - selectPages `1,4-z` on 5 pages → 3; invalid range → `FAILED` mapped to generic message.
-  - compress returns a valid PDF; output of encrypted input stays encrypted.
-  - `parseQpdfJson` on live `run --json` output for a PDF with Info dict.
+**Vitest 5, Node environment:**
+- Unit tests for every `src/lib` module without React: `filename`, `format`, `limits`, `pdf-files`,
+  `page-ranges`, `passwords`, `merge-list`, `pdf-info`, and `qpdf` (`describeQpdfError`,
+  `assertOutput`).
+- `qpdf.integration.test.ts` (real package, inline in Node; PDFs from `src/test/make-pdf.ts`):
+  decrypt right / wrong / empty password, owner-only restrictions removed with an empty password,
+  retry with the same `File` after a wrong password; `ensureUnencrypted` rejects both encryption
+  kinds and accepts plain PDFs; encrypt with permissions; merge 3+2 → 5 pages and not encrypted;
+  `selectPages` `1,4-z` → 3 pages and out-of-range → `FAILED`; compress returns a valid PDF;
+  `parseQpdfJson` on live `run --json` output.
 
-**Manual verification** (`npm run build && npm run preview`, desktop + owner's phone):
-each tool end to end with a real PDF; password prompts for protected inputs; size limit error and
-phone warning; theme toggle persists without flash; direct load of every tool URL; home page loads
-no `.wasm`; PWA: service worker active, `qpdf*.wasm` precached, offline reload of a tool page and a
-successful run offline.
+**Manual verification** (`npm run build && npm run preview`, desktop + owner's phone): each tool
+end to end with a real PDF; encrypted input rejected with the Decrypt link in all five other tools;
+size limit error and phone warning; theme toggle persists without flash; direct load of every tool
+URL; home page loads no `.wasm`; PWA: service worker active, `qpdf*.wasm` precached, offline reload
+of a tool page and a successful run offline.
 
 ## Out of scope
 
-Docker/deploy scripts; split, rotate, linearize, repair, thumbnails, image conversion; update-prompt
-UI; drag-to-reorder; browser E2E automation; reporting the package bug (owner's call; a repro can be
-provided).
+Docker/deploy scripts; password support outside Decrypt; split, rotate, linearize, repair,
+thumbnails, image conversion; update-prompt UI; drag-to-reorder; browser E2E automation; component
+tests (no jsdom); reporting the package issue (owner's call; a repro can be provided).
