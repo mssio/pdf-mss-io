@@ -1,4 +1,4 @@
-import { Combine, FileKey2, FileLock2, type LucideIcon } from "lucide-react";
+import { Combine, FileKey2, FileLock2, FileOutput, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 
 export type Tool = {
@@ -42,5 +42,14 @@ export const tools: Tool[] = [
     description: "Combine several PDFs into one file, in the order you choose.",
     icon: Combine,
     load: () => import("@/pages/MergePage"),
+  },
+  {
+    id: "extract",
+    path: "/extract",
+    title: "Extract pages",
+    navLabel: "Extract",
+    description: "Save selected pages, like 1-3 or 5 to the end, as a new PDF.",
+    icon: FileOutput,
+    load: () => import("@/pages/ExtractPage"),
   },
 ];

@@ -103,3 +103,23 @@ describe("merge", () => {
     expect(await qpdf.info(output.slice())).toMatchObject({ pageCount: 5, encrypted: false });
   });
 });
+
+describe("selectPages", () => {
+  test("1,4-z of 5 pages gives 3 pages", async () => {
+    const { output } = await qpdf.selectPages(pdfFile(makePdf(5)), "1,4-z");
+    assertOutput(output);
+    expect((await qpdf.info(output.slice())).pageCount).toBe(3);
+  });
+
+  test("keeps owner restrictions", async () => {
+    const { output } = await qpdf.selectPages(pdfFile(await restrictionOnly(3)), "1");
+    expect((await qpdf.info(output.slice())).encrypted).toBe(true);
+  });
+
+  test("out-of-range pages show qpdf's reason as detail", async () => {
+    const error = await qpdf.selectPages(pdfFile(makePdf(5)), "9").catch((e: unknown) => e);
+    const described = describeQpdfError(error, "run");
+    expect(described.message).toBe("Could not process this PDF.");
+    expect(described.detail).toContain("out of range");
+  });
+});
