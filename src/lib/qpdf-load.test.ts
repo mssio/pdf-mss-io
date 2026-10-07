@@ -39,3 +39,22 @@ test("resetQpdf terminates an engine that did load", async () => {
   resetQpdf();
   await vi.waitFor(() => expect(loaded.terminate).toHaveBeenCalledTimes(1));
 });
+
+test("a late load failure of a dropped engine doesn't forget the fresh one", async () => {
+  resetQpdf();
+  let failOld: (error: Error) => void = () => {};
+  createQpdf.mockReturnValueOnce(new Promise((_, reject) => (failOld = reject)));
+  const fresh = { terminate: vi.fn() };
+  createQpdf.mockResolvedValueOnce(fresh);
+
+  const old = getQpdf();
+  old.catch(() => {});
+  await settle();
+  resetQpdf(); // drop the stuck engine
+  await expect(getQpdf()).resolves.toBe(fresh);
+  failOld(new Error("worker failed to load")); // the dropped engine finally fails
+  await settle();
+  const callsBefore = createQpdf.mock.calls.length;
+  await expect(getQpdf()).resolves.toBe(fresh); // still cached, no third engine
+  expect(createQpdf.mock.calls.length).toBe(callsBefore);
+});

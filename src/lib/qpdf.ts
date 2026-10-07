@@ -7,12 +7,15 @@ let pending: Promise<Qpdf> | null = null;
  * a failed load is not cached, so the next call retries.
  */
 export function getQpdf(): Promise<Qpdf> {
-  pending ??= import("@mssio/qpdf-wasm")
-    .then((module) => module.createQpdf())
-    .catch((error: unknown) => {
-      pending = null;
-      throw error;
-    });
+  if (!pending) {
+    const loading: Promise<Qpdf> = import("@mssio/qpdf-wasm")
+      .then((module) => module.createQpdf())
+      .catch((error: unknown) => {
+        if (pending === loading) pending = null; // a dropped engine failing late must not forget a newer one
+        throw error;
+      });
+    pending = loading;
+  }
   return pending;
 }
 
@@ -37,9 +40,16 @@ export class JobTimeoutError extends Error {
   }
 }
 
-/** Generous time allowed for one job: 1 minute plus 1 minute per started 25 MB of input. */
+/** Time allowed for the engine to load (first visit: ~2.6 MB over the network). */
+export const ENGINE_LOAD_TIMEOUT_MS = 120_000;
+
+/**
+ * Generous time allowed for one job once the engine is loaded: 2 minutes plus 2 minutes per started
+ * 25 MB of input (245 MB → 22 minutes). Sized well above an iPhone 17's real timings so slower or
+ * throttled phones aren't cut off; it only catches a worker that never answers.
+ */
 export function jobTimeoutMs(totalBytes: number): number {
-  return 60_000 + Math.ceil(totalBytes / (25 * 1024 * 1024)) * 60_000;
+  return 120_000 + Math.ceil(totalBytes / (25 * 1024 * 1024)) * 120_000;
 }
 
 /** Thrown when a tool other than Decrypt gets a PDF that needs a password to open. */

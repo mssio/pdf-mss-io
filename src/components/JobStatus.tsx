@@ -24,7 +24,9 @@ export function JobStatus({ status }: { status: JobStatusState | null }) {
   return (
     <div role="status" aria-live="polite" className="grid gap-0.5 text-sm text-muted-foreground">
       <p className="tabular-nums">
-        {step} {formatElapsed(now - status.startedAt)}
+        {step}{" "}
+        {/* Not announced: a live region that changes every second would drown out screen readers. */}
+        <span aria-hidden="true">{formatElapsed(now - status.startedAt)}</span>
       </p>
       {status.sizeBytes > LARGE_FILE_BYTES ? <p className="text-xs">Large files can take a few minutes on phones.</p> : null}
     </div>

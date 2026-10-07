@@ -86,12 +86,12 @@ describe("describeQpdfError", () => {
 });
 
 describe("job time limit", () => {
-  test("one minute plus one minute per started 25 MB", () => {
-    expect(jobTimeoutMs(0)).toBe(60_000);
-    expect(jobTimeoutMs(1)).toBe(120_000);
-    expect(jobTimeoutMs(25 * 1024 * 1024)).toBe(120_000);
-    expect(jobTimeoutMs(25 * 1024 * 1024 + 1)).toBe(180_000);
-    expect(jobTimeoutMs(245 * 1024 * 1024)).toBe(660_000);
+  test("two minutes plus two minutes per started 25 MB", () => {
+    expect(jobTimeoutMs(0)).toBe(120_000);
+    expect(jobTimeoutMs(1)).toBe(240_000);
+    expect(jobTimeoutMs(25 * 1024 * 1024)).toBe(240_000);
+    expect(jobTimeoutMs(25 * 1024 * 1024 + 1)).toBe(360_000);
+    expect(jobTimeoutMs(245 * 1024 * 1024)).toBe(1_320_000); // 22 minutes
   });
 
   test("a timed-out job explains itself", () => {

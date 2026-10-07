@@ -15,13 +15,14 @@ test("shows the step and elapsed time while a job runs, plus a hint for large fi
   await page.goto("/decrypt");
   await chooseFiles(page, "sixty-mb.pdf");
   await page.getByRole("button", { name: "Decrypt", exact: true }).click();
-  await expect(page.getByText("Loading the PDF engine… 0:00")).toBeVisible();
+  // The installed clock keeps flowing in real time, so allow one second of slack.
+  await expect(page.getByText(/^Loading the PDF engine… 0:0[01]$/)).toBeVisible();
   await page.clock.fastForward(5_000);
-  await expect(page.getByText("Loading the PDF engine… 0:05")).toBeVisible();
+  await expect(page.getByText(/^Loading the PDF engine… 0:0[56]$/)).toBeVisible();
   await expect(page.getByText("Large files can take a few minutes on phones.")).toBeVisible();
 });
 
-test("a stuck engine times out with a clear message, and the next job works", async ({ page }) => {
+test("an engine that never loads times out with the load message, and the next job works", async ({ page }) => {
   await page.clock.install();
   await hangEngine(page);
   await page.goto("/decrypt");
@@ -30,12 +31,8 @@ test("a stuck engine times out with a clear message, and the next job works", as
   await expect(page.getByText(/Loading the PDF engine…/)).toBeVisible();
   await expect(page.getByText("Large files can take a few minutes on phones.")).toHaveCount(0);
 
-  await page.clock.fastForward(121_000); // past the 2-minute limit for a small file
-  await expect(
-    page.getByText(
-      "This file took too long to process on this device. It may be too big for its memory. Try a smaller file or a computer.",
-    ),
-  ).toBeVisible();
+  await page.clock.fastForward(121_000); // past the 2-minute engine load limit
+  await expect(page.getByText("Couldn't load the PDF engine. Check your connection and reload.")).toBeVisible();
   await expect(page.getByText(/Loading the PDF engine…/)).toHaveCount(0);
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -45,7 +42,9 @@ test("a stuck engine times out with a clear message, and the next job works", as
   expect(await inspectPdf(file.path)).toMatchObject({ encrypted: false });
 });
 
-test("each tool names its step", async ({ page }) => {
+// A job that hangs after the engine loaded (JobTimeoutError) can't be provoked in a browser test;
+// runWithTimeLimits' unit tests cover it with fake timers.
+test("a running job shows a step and a timer", async ({ page }) => {
   await page.clock.install();
   const engineLoaded = page.waitForEvent("worker");
   await page.goto("/compress");
