@@ -81,7 +81,7 @@ Run `npm run build && npm run preview` and open http://localhost:4173 in Chrome.
 - [ ] Offline, `/info` also loads and works.
 - [ ] Back online: after a new build, two reloads show the new version (auto-update).
 
-## Task 12: Final checks (not ready yet)
+## Task 12: Final checks (ready)
 
 Desktop (`npm run preview`; Chrome plus Safari or Firefox):
 
