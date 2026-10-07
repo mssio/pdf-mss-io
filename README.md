@@ -1,78 +1,119 @@
-# React + TypeScript + Vite
+# PDF Toolbox
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Private PDF tools that run entirely in your browser. PDFs and passwords never leave the device:
+every operation runs locally with [qpdf](https://github.com/qpdf/qpdf) compiled to WebAssembly
+([`@mssio/qpdf-wasm`](https://www.npmjs.com/package/@mssio/qpdf-wasm)). The build is plain static
+files, and the app installs as a PWA that works offline after the first visit.
 
-Currently, two official plugins are available:
+Current version: **1.0.0** ([changelog](CHANGELOG.md)).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Tools
 
-## React Compiler
+| Tool | Path | What it does |
+|---|---|---|
+| Decrypt | `/decrypt` | Removes a PDF's password (or, with an empty password, its owner restrictions). |
+| Encrypt | `/encrypt` | Adds an open password (AES-256) and permissions for printing, editing, copying and comments. |
+| Merge | `/merge` | Combines several PDFs in the order you choose. |
+| Extract pages | `/extract` | Saves selected pages (`1-3,7`, `5-z`) as a new PDF. |
+| Compress | `/compress` | Repacks and recompresses the PDF structure (images are not downsampled). |
+| Info | `/info` | Shows properties, page size, restrictions and attachments. |
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+Only Decrypt accepts PDFs that need a password to open; the other tools ask you to decrypt first.
+PDFs that open without a password but carry restrictions work everywhere.
 
-Note: This will impact Vite dev & build performances.
-You can also try [the experimental native React Compiler support in plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md#rust-react-compiler) by using `compiler: true` in the plugin options instead of using the Babel plugin.
+**Size limit:** 250 MB combined per operation (phones and computers). Big files take minutes on a
+phone; while a job runs the app shows its step and elapsed time. If the browser kills the page mid-job
+the app explains it after the reload, and a job that never finishes times out with a clear message
+instead of spinning forever. qpdf's
+WebAssembly memory runs out on larger inputs. The values live in `src/lib/limits.ts`.
 
-## Expanding the ESLint configuration
+## Requirements
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- Node 24 LTS (`nvm use` reads `.nvmrc`). Vitest 5 does not support Node 25.
+- npm
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Scripts
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm install
+npm run dev       # dev server on http://localhost:5173
+npm test          # unit + integration tests (real qpdf wasm in Node)
+npm run test:e2e  # browser tests with Playwright (builds first)
+npm run lint
+npm run build     # type-check and build static files into dist/
+npm run preview   # serve dist/ on http://localhost:4173 (service worker active)
+npm run icons     # regenerate PWA icons from public/favicon.svg
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+Before the first `npm run test:e2e`, install the browsers once: `npx playwright install chromium webkit` (~300 MB, outside the repo).
+`npm run test:e2e` needs port 4173 free (stop any running `npm run preview` first). The E2E cleanup uses POSIX process groups, so run it on macOS or Linux.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Stack
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Vite 8, React 19, React Router 8 (data router, lazy routes), TypeScript 6.0, Tailwind CSS 4,
+shadcn/ui (new-york) on Radix, `@mssio/qpdf-wasm`, `vite-plugin-pwa`, Vitest 5, Playwright (E2E).
 
+## Hosting `dist/`
+
+The app must be served from the domain root (`https://example.com/`), not a sub-path; `start_url` and `scope` are `/`.
+
+`dist/` is static. Any web server or static host works if it does three things:
+
+1. **Falls back to `index.html`** for unknown paths, so `/decrypt` loads on a direct visit or refresh.
+2. Serves `.wasm` as `application/wasm` (fastest compile; other types still work).
+3. Sends `Cache-Control: no-cache` for `index.html` and `sw.js` so updates are picked up.
+   Files in `assets/` are content-hashed and can be cached forever.
+
+**nginx**
+
+```nginx
+location / {
+  try_files $uri /index.html;
+}
+location = /index.html { add_header Cache-Control "no-cache"; }
+location = /sw.js      { add_header Cache-Control "no-cache"; }
+location /assets/      { add_header Cache-Control "public, max-age=31536000, immutable"; }
+# .wasm must be served as application/wasm: check nginx's mime.types has "application/wasm wasm;".
+# Add it there if missing. Don't put a separate types {} block here; it replaces the whole MIME map.
 ```
+
+nginx `add_header` inside a `location` replaces headers set at `server` level (for example a
+CSP); repeat them there if you use both.
+
+**Netlify / Cloudflare Pages:** add `public/_redirects` containing `/*  /index.html  200`.
+
+**Caddy**
+
+```caddy
+example.com {
+  root * /srv/pdf-toolbox
+  try_files {path} /index.html
+  file_server
+}
+```
+
+**GitHub Pages:** copy `dist/index.html` to `dist/404.html` after building. Use a user/organization site or a custom domain, since project sites live under `/repo/`.
+
+**Content-Security-Policy:** if you set one, allow `script-src 'self' 'wasm-unsafe-eval'` plus the
+inline theme script in `index.html` (by its `sha256-` hash, or `'unsafe-inline'`), `worker-src 'self'`, and
+`connect-src 'self'` (needed to fetch the wasm). Without the theme script allowance the page still works but flashes the wrong
+theme on load.
+
+## Offline
+
+The service worker precaches the whole app, including the qpdf worker and `.wasm` (about 2.7 MB in total),
+after the first online visit. A new deployment is downloaded the next time the app is opened online and used once every tab of the app has been closed and it is opened again; open pages are never reloaded.
+
+## Adding a tool
+
+1. Write any non-React logic in `src/lib/` with a unit test.
+2. Create `src/pages/<Name>Page.tsx` exporting `function Component()`, built from `ToolPage`,
+   `ResultCard`, `PdfFileDropzone`, `useQpdfJob` and `useBlobUrl` (see `CompressPage.tsx`).
+3. Add an entry to `src/tools.ts`; the route, header link and home card follow from it.
+4. Add an integration test for the qpdf call in `src/lib/qpdf.integration.test.ts`.
+
+## Release checks
+
+Release 1.0.0 needs `npm run test:e2e` to pass and every owner box in [docs/todo.md](docs/todo.md) ticked.
+
+See [AGENTS.md](AGENTS.md) for the rules the code follows.

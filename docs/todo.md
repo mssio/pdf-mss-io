@@ -1,0 +1,83 @@
+# Release checks for 1.0.0
+
+Release 1.0.0 (plan Task 18) starts only when **both** are true:
+
+1. `npm run test:e2e` passes (all automated checks below).
+2. Every owner box at the bottom is ticked (`- [x]`).
+
+## Setup
+
+```bash
+cd pdf-mss-io
+nvm use                                  # Node 24
+npm install
+npx playwright install chromium webkit   # once, ~300 MB, outside the repo
+npm run test:e2e                         # builds, then runs every browser check
+```
+
+After a run, the test PDFs are in `e2e/.fixtures/`: `plain.pdf` (5 pages, title "Plain sample"),
+`protected.pdf` (password `open-me`), `restricted.pdf` (opens without a password, printing disabled),
+and the screenshots are in `test-results/screenshots/`.
+
+## Automated checks (Playwright)
+
+Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
+
+| Check | Spec file |
+|---|---|
+| Header logo + "PDF Toolbox", Home link, theme toggle, footer text with the app version, six tool cards, unknown addresses show "Page not found" with a way home | `e2e/shell.spec.ts` |
+| Theme toggle survives a reload with no flash; follows the system theme when nothing is saved | `e2e/shell.spec.ts` |
+| Every tool URL loads directly | `e2e/shell.spec.ts` |
+| Home page loads no `.wasm` | `e2e/shell.spec.ts` |
+| Nothing overflows sideways at 375 px (home and every tool) | `e2e/shell.spec.ts` |
+| A page whose code fails to load shows "Something went wrong" inside the header and footer | `e2e/shell.spec.ts` |
+| Decrypt: wrong → right password on the same file, `protected-d.pdf` opens without a password, empty password removes restrictions, non-PDF refused, "Decrypt another file" / "Back to home", the wasm loads only when a job runs, over 250 MB refused | `e2e/decrypt.spec.ts` |
+| Encrypt: password validation, `plain-protected.pdf` needs the password and denies printing, password-protected input → Decrypt link, restriction-only input accepted | `e2e/encrypt.spec.ts` |
+| Merge: append, reorder (move up), remove, disabled first-up/last-down, order kept in `merged.pdf`, restrictions note only when an input is restricted, merged output unencrypted, protected/unreadable/empty files named, error clears when the protected file is removed, keyboard path | `e2e/merge.spec.ts` |
+| Extract: page count, loose ranges → `plain-pages.pdf` with 3 pages, invalid and out-of-range messages, protected input → Decrypt link | `e2e/extract.spec.ts` |
+| Compress: smaller result with sizes, download is smaller and a valid 5-page PDF, second pass → "No smaller version" without a download, protected input → Decrypt link | `e2e/compress.spec.ts` |
+| Info: plain PDF details, restriction badges, Linearized badge, protected input → Decrypt link | `e2e/info.spec.ts` |
+| No `type="password"` input anywhere; password fields masked and carry the password-manager opt-outs | `e2e/password-fields.spec.ts` |
+| Phones (small touch screen, either orientation): files over the phone limit are refused with "On phones, files must be … Use a computer for bigger files."; a computer gets the computer wording | `e2e/phone.spec.ts` |
+| Every tool's result page shows how long the job took ("Finished in m:ss.") | all six tool specs |
+| While a job runs, the step and elapsed time show ("Loading the PDF engine… 0:05", then the tool's step) plus a hint for files over 50 MB; a stuck engine times out with "This file took too long to process on this device…" and the next job works with a fresh engine | `e2e/job-safeguard.spec.ts` |
+| A job cut off by a page reload is explained once after the reload ("The page reloaded while a file was being processed…"), and a finished job leaves no notice | `e2e/phone.spec.ts` |
+| Offline: service worker active and wasm cached, then with the server stopped `/info` and `/decrypt` load and decrypting works (Chromium and WebKit) | `e2e/offline.spec.ts` |
+
+## Owner checks
+
+Only a person can check these. Tick each box after checking it.
+
+- [x] Screenshots in `test-results/screenshots/` (light and dark, 375 px and 1280 px) look right and match the old app's style.
+- [x] The favicon (dark tile, white document, open padlock) shows in a real browser tab, in light and dark browser themes.
+- [x] Encrypt `plain.pdf` with password `secret` and printing unticked: your PDF viewer asks for `secret` and blocks printing.
+- [x] Type a password in Decrypt and in Encrypt and submit: neither the browser nor your password manager offers to save it.
+- [x] Open every tool once in your everyday browser (if it isn't Chrome): it works the same.
+- [x] After a new build, open the app once (online), close every tab, then reopen it → the new version appears.
+- [x] Inspect one real-world PDF of your own in Info → no crash; missing fields are simply left out.
+
+Phone (deploy `dist/` somewhere with HTTPS; `npm run preview -- --host` on the same Wi-Fi works for the non-offline checks):
+
+- [x] Add to Home Screen → opens full-screen with the padlock icon.
+- [x] Encrypt a ~100 MB PDF: works.
+- [x] Encrypt the 100, 150, 200 and ~245 MB test files on your phone (owner reported 2026-10-07: all work on an iPhone 17 in a fresh tab, slowly; phone limit set to 250 MB).
+- [x] On your phone, encrypting `.private/fixtures/big-200mb.pdf` shows "Encrypting… m:ss" counting up and "Large files can take a few minutes on phones." under the button. Note the time when it finishes and tell Claude (it checks the job time limit's margin: 200 MB gets 18 minutes).
+- [x] Airplane mode → open from the home screen → Decrypt works.
+- [x] Every box above is ticked.
+
+## After 1.0.0 (not part of the release gate)
+
+- **Real progress bar** (owner, in the `qpdf-wasm` repo, then here): give this prompt to Claude in the
+  `@mssio/qpdf-wasm` repo:
+
+  > In `@mssio/qpdf-wasm`, add streaming progress. Give every helper's options and `run()`'s options an
+  > optional `onProgress?: (percent: number) => void`. When it's set, run qpdf with `--progress`, parse
+  > each stdout line matching `/write progress: (\d+)%/` as Emscripten prints it (don't wait for the job
+  > to end), and post `{ type: "progress", id, percent }` from the worker to the main thread. The
+  > pool/executor forwards these to that job's callback; inline (Node) mode calls it directly. Keep
+  > progress lines out of `RunResult.stdout`, don't call the callback after the job settles or after
+  > `terminate()`, and keep the API backward compatible. Add unit and browser tests (percent values
+  > rise from 0 to 100 for a large encrypt) and README docs, and release it as **1.1.0**.
+
+  Then, in this repo: upgrade to `@mssio/qpdf-wasm@^1.1.0`, pass `onProgress` from `useQpdfJob`, show a
+  percentage bar in `JobStatus`, and use "no progress for N seconds" for the stuck-engine time limit.
