@@ -9,8 +9,8 @@ import { ToolPage } from "@/components/ToolPage";
 import { Button } from "@/components/ui/button";
 import { CardContent, CardFooter } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SecretInput } from "@/components/ui/secret-input";
 import { outputFilename } from "@/lib/filename";
 import { checkSize, isLikelyPhone } from "@/lib/limits";
 import { generateOwnerPassword, validateNewPassword } from "@/lib/passwords";
@@ -118,10 +118,8 @@ export function Component() {
           />
           <div className="grid gap-2">
             <Label htmlFor="password">Password to open</Label>
-            <Input
+            <SecretInput
               id="password"
-              type="password"
-              autoComplete="new-password"
               disabled={job.busy}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -129,10 +127,8 @@ export function Component() {
           </div>
           <div className="grid gap-2">
             <Label htmlFor="confirm">Confirm password</Label>
-            <Input
+            <SecretInput
               id="confirm"
-              type="password"
-              autoComplete="new-password"
               disabled={job.busy}
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
