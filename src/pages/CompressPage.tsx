@@ -2,6 +2,7 @@ import { Info, Loader2, ShieldCheck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { ErrorBox } from "@/components/ErrorBox";
+import { JobStatus } from "@/components/JobStatus";
 import { PdfFileDropzone } from "@/components/PdfFileDropzone";
 import { ResultCard } from "@/components/ResultCard";
 import { SizeNotice } from "@/components/SizeNotice";
@@ -44,7 +45,7 @@ export function Component() {
       assertOutput(compressed.output);
       logWarnings(compressed.warnings);
       return compressed.output;
-    });
+    }, { label: "Compressing…", sizeBytes: file.size });
     if (!output) return;
     const change = sizeChange(file.size, output.length);
     if (change.smaller) result.show(output, outputFilename(file.name, "-compressed"));
@@ -109,7 +110,7 @@ export function Component() {
           <SizeNotice check={sizeCheck} />
           {job.error ? <ErrorBox error={job.error} /> : null}
         </CardContent>
-        <CardFooter className="pt-6">
+        <CardFooter className="flex-wrap gap-x-4 gap-y-2 pt-6">
           <Button type="submit" disabled={job.busy || !sizeCheck.ok} className="w-full sm:w-auto">
             {job.busy ? (
               <>
@@ -120,6 +121,7 @@ export function Component() {
               "Compress"
             )}
           </Button>
+          <JobStatus status={job.status} />
         </CardFooter>
       </form>
     </ToolPage>

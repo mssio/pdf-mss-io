@@ -2,6 +2,7 @@ import { Loader2, ShieldAlert } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { ErrorBox } from "@/components/ErrorBox";
+import { JobStatus } from "@/components/JobStatus";
 import { PdfFileDropzone } from "@/components/PdfFileDropzone";
 import { ResultCard } from "@/components/ResultCard";
 import { SizeNotice } from "@/components/SizeNotice";
@@ -41,7 +42,7 @@ export function Component() {
       assertOutput(decrypted.output);
       logWarnings(decrypted.warnings);
       return decrypted.output;
-    });
+    }, { label: "Decrypting…", sizeBytes: file.size });
     if (output) {
       result.show(output, outputFilename(file.name, "-d"));
       setPassword("");
@@ -111,7 +112,7 @@ export function Component() {
           <SizeNotice check={sizeCheck} />
           {job.error ? <ErrorBox error={job.error} /> : null}
         </CardContent>
-        <CardFooter className="pt-6">
+        <CardFooter className="flex-wrap gap-x-4 gap-y-2 pt-6">
           <Button type="submit" disabled={job.busy || !sizeCheck.ok} className="w-full sm:w-auto">
             {job.busy ? (
               <>
@@ -122,6 +123,7 @@ export function Component() {
               "Decrypt"
             )}
           </Button>
+          <JobStatus status={job.status} />
         </CardFooter>
       </form>
     </ToolPage>

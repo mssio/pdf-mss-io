@@ -2,6 +2,7 @@ import { Loader2, ShieldCheck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { ErrorBox } from "@/components/ErrorBox";
+import { JobStatus } from "@/components/JobStatus";
 import { PdfFileDropzone } from "@/components/PdfFileDropzone";
 import { ResultCard } from "@/components/ResultCard";
 import { SizeNotice } from "@/components/SizeNotice";
@@ -36,7 +37,10 @@ export function Component() {
       job.clearError();
       return;
     }
-    const info = await job.run((qpdf) => ensureNoOpenPassword(qpdf, chosen));
+    const info = await job.run((qpdf) => ensureNoOpenPassword(qpdf, chosen), {
+      label: "Counting pages…",
+      sizeBytes: chosen.size,
+    });
     if (info) setPageCount(info.pageCount);
   }
 
@@ -53,7 +57,7 @@ export function Component() {
       assertOutput(output);
       logWarnings(warnings);
       return { output, pages: (await qpdf.info(output.slice())).pageCount };
-    });
+    }, { label: "Extracting pages…", sizeBytes: file.size });
     if (extracted) {
       result.show(extracted.output, outputFilename(file.name, "-pages"));
       setExtractedPages(extracted.pages);
@@ -126,7 +130,7 @@ export function Component() {
           <SizeNotice check={sizeCheck} />
           {job.error ? <ErrorBox error={job.error} /> : null}
         </CardContent>
-        <CardFooter className="pt-6">
+        <CardFooter className="flex-wrap gap-x-4 gap-y-2 pt-6">
           <Button
             type="submit"
             disabled={job.busy || pageCount === null || !sizeCheck.ok}
@@ -141,6 +145,7 @@ export function Component() {
               "Extract"
             )}
           </Button>
+          <JobStatus status={job.status} />
         </CardFooter>
       </form>
     </ToolPage>

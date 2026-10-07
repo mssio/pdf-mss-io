@@ -2,6 +2,7 @@ import { Loader2, ShieldCheck } from "lucide-react";
 import { Fragment, useState, type FormEvent, type ReactNode } from "react";
 
 import { ErrorBox } from "@/components/ErrorBox";
+import { JobStatus } from "@/components/JobStatus";
 import { PdfFileDropzone } from "@/components/PdfFileDropzone";
 import { ResultCard } from "@/components/ResultCard";
 import { SizeNotice } from "@/components/SizeNotice";
@@ -159,7 +160,7 @@ export function Component() {
         linearized: isLinearized(linearization),
         details: parseQpdfJson(JSON.parse(json.stdout)),
       };
-    });
+    }, { label: "Inspecting…", sizeBytes: file.size });
     if (result) setInspection(result);
   }
 
@@ -206,7 +207,7 @@ export function Component() {
           <SizeNotice check={sizeCheck} />
           {job.error ? <ErrorBox error={job.error} /> : null}
         </CardContent>
-        <CardFooter className="pt-6">
+        <CardFooter className="flex-wrap gap-x-4 gap-y-2 pt-6">
           <Button type="submit" disabled={job.busy || !sizeCheck.ok} className="w-full sm:w-auto">
             {job.busy ? (
               <>
@@ -217,6 +218,7 @@ export function Component() {
               "Inspect"
             )}
           </Button>
+          <JobStatus status={job.status} />
         </CardFooter>
       </form>
     </ToolPage>

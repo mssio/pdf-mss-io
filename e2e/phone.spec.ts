@@ -7,23 +7,23 @@ test.describe("on a phone", () => {
 
   test("files over the phone limit are refused with a pointer to a computer", async ({ page }) => {
     await page.goto("/decrypt");
-    await chooseFiles(page, "phone-oversize.pdf");
+    await chooseFiles(page, "oversize.pdf");
     await expect(
       page.getByText(
-        "On phones, files must be 100 MB or less in total (you selected 120 MB). Use a computer for bigger files.",
+        "On phones, files must be 250 MB or less in total (you selected 260 MB). Use a computer for bigger files.",
       ),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Decrypt", exact: true })).toBeDisabled();
   });
 });
 
-test("a computer accepts the same file", async ({ page }) => {
+test("a computer gets the computer wording for the same file", async ({ page }) => {
   // Pin a desktop-sized memory so a low-memory test machine can't flip this into the phone limit.
   await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "deviceMemory", { get: () => 8 }));
   await page.goto("/decrypt");
-  await chooseFiles(page, "phone-oversize.pdf");
-  await expect(page.getByText(/files must be .* or less in total/)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Decrypt", exact: true })).toBeEnabled();
+  await chooseFiles(page, "oversize.pdf");
+  await expect(page.getByText("Files must be 250 MB or less in total (you selected 260 MB).")).toBeVisible();
+  await expect(page.getByText(/On phones/)).toHaveCount(0);
 });
 
 const CRASH_NOTICE = /The page reloaded while a file was being processed/;

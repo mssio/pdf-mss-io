@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp, FileText, Info, Loader2, X } from "lucide-react";
 import { useReducer, useState, type FormEvent } from "react";
 
 import { ErrorBox } from "@/components/ErrorBox";
+import { JobStatus } from "@/components/JobStatus";
 import { PdfFileDropzone } from "@/components/PdfFileDropzone";
 import { ResultCard } from "@/components/ResultCard";
 import { SizeNotice } from "@/components/SizeNotice";
@@ -58,7 +59,7 @@ export function Component() {
       assertOutput(output);
       logWarnings(warnings);
       return { output, summary: { files: files.length, pages, droppedRestrictions } };
-    });
+    }, { label: "Merging…", sizeBytes: total });
     if (merged) {
       result.show(merged.output, "merged.pdf");
       setSummary(merged.summary);
@@ -153,7 +154,7 @@ export function Component() {
           <SizeNotice check={sizeCheck} />
           {job.error ? <ErrorBox error={job.error} /> : null}
         </CardContent>
-        <CardFooter className="pt-6">
+        <CardFooter className="flex-wrap gap-x-4 gap-y-2 pt-6">
           <Button type="submit" disabled={job.busy || items.length < 2 || !sizeCheck.ok} className="w-full sm:w-auto">
             {job.busy ? (
               <>
@@ -164,6 +165,7 @@ export function Component() {
               "Merge"
             )}
           </Button>
+          <JobStatus status={job.status} />
         </CardFooter>
       </form>
     </ToolPage>

@@ -4,6 +4,8 @@ import { describe, expect, test } from "vitest";
 import {
   assertOutput,
   describeQpdfError,
+  JobTimeoutError,
+  jobTimeoutMs,
   OUT_OF_MEMORY_MESSAGE,
   PasswordProtectedError,
   TruncatedOutputError,
@@ -80,5 +82,26 @@ describe("describeQpdfError", () => {
       detail: "number 9 out of range",
     });
     expect(describeQpdfError("boom", "run")).toEqual({ message: "Could not process this PDF.", detail: "boom" });
+  });
+});
+
+describe("job time limit", () => {
+  test("one minute plus one minute per started 25 MB", () => {
+    expect(jobTimeoutMs(0)).toBe(60_000);
+    expect(jobTimeoutMs(1)).toBe(120_000);
+    expect(jobTimeoutMs(25 * 1024 * 1024)).toBe(120_000);
+    expect(jobTimeoutMs(25 * 1024 * 1024 + 1)).toBe(180_000);
+    expect(jobTimeoutMs(245 * 1024 * 1024)).toBe(660_000);
+  });
+
+  test("a timed-out job explains itself", () => {
+    expect(describeQpdfError(new JobTimeoutError(), "run")).toEqual({
+      message:
+        "This file took too long to process on this device. It may be too big for its memory. Try a smaller file or a computer.",
+    });
+    expect(describeQpdfError(new JobTimeoutError(), "load")).toEqual({
+      message:
+        "This file took too long to process on this device. It may be too big for its memory. Try a smaller file or a computer.",
+    });
   });
 });

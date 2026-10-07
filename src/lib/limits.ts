@@ -3,10 +3,11 @@ import { formatBytes } from "@/lib/format";
 /** Hard limit for the combined size of a tool's inputs on a computer. qpdf runs out of wasm memory above this. */
 export const MAX_TOTAL_BYTES = 250 * 1024 * 1024;
 /**
- * Hard limit on phones. iOS kills (and reloads) the page instead of letting qpdf fail cleanly: an iPhone 17
- * handled 100 MB and reloaded at ~245 MB.
+ * Hard limit on phones, kept separate so it can be lowered in one line. An iPhone 17 encrypted 100–245 MB
+ * in a fresh tab (slowly); failures depend on free memory and are handled by the crash notice and the
+ * job time limit (see jobTimeoutMs) instead.
  */
-export const PHONE_MAX_BYTES = 100 * 1024 * 1024;
+export const PHONE_MAX_BYTES = 250 * 1024 * 1024;
 
 export type SizeCheck = { ok: true } | { ok: false; message: string };
 

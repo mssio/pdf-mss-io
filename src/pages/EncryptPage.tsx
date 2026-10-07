@@ -2,6 +2,7 @@ import { Loader2, Lock } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { ErrorBox } from "@/components/ErrorBox";
+import { JobStatus } from "@/components/JobStatus";
 import { PdfFileDropzone } from "@/components/PdfFileDropzone";
 import { ResultCard } from "@/components/ResultCard";
 import { SizeNotice } from "@/components/SizeNotice";
@@ -66,7 +67,7 @@ export function Component() {
       assertOutput(encrypted.output);
       logWarnings(encrypted.warnings);
       return encrypted.output;
-    });
+    }, { label: "Encrypting…", sizeBytes: file.size });
     if (output) {
       result.show(output, outputFilename(file.name, "-protected"));
       setPassword("");
@@ -153,7 +154,7 @@ export function Component() {
           <SizeNotice check={sizeCheck} />
           {job.error ? <ErrorBox error={job.error} /> : null}
         </CardContent>
-        <CardFooter className="pt-6">
+        <CardFooter className="flex-wrap gap-x-4 gap-y-2 pt-6">
           <Button type="submit" disabled={job.busy || !sizeCheck.ok} className="w-full sm:w-auto">
             {job.busy ? (
               <>
@@ -164,6 +165,7 @@ export function Component() {
               "Encrypt"
             )}
           </Button>
+          <JobStatus status={job.status} />
         </CardFooter>
       </form>
     </ToolPage>

@@ -14,9 +14,6 @@ describe("checkSize on a computer", () => {
     });
   });
 
-  test("the phone limit doesn't apply", () => {
-    expect(checkSize(PHONE_MAX_BYTES + 1, false)).toEqual({ ok: true });
-  });
 });
 
 describe("checkSize on a phone", () => {
@@ -25,9 +22,9 @@ describe("checkSize on a phone", () => {
   });
 
   test("over the phone limit is rejected and points to a computer", () => {
-    expect(checkSize(150 * 1024 * 1024, true)).toEqual({
+    expect(checkSize(260 * 1024 * 1024, true)).toEqual({
       ok: false,
-      message: "On phones, files must be 100 MB or less in total (you selected 150 MB). Use a computer for bigger files.",
+      message: "On phones, files must be 250 MB or less in total (you selected 260 MB). Use a computer for bigger files.",
     });
   });
 });

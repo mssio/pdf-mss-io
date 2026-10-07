@@ -16,6 +16,32 @@ export function getQpdf(): Promise<Qpdf> {
   return pending;
 }
 
+/**
+ * Drops the current engine so the next getQpdf() starts a fresh one. Used when a job never answers
+ * (a frozen or killed worker): never waits for the old engine, terminates it if it ever loads.
+ */
+export function resetQpdf(): void {
+  const current = pending;
+  pending = null;
+  current?.then(
+    (qpdf) => qpdf.terminate(),
+    () => {},
+  );
+}
+
+/** A job ran past jobTimeoutMs(); the engine is assumed stuck. */
+export class JobTimeoutError extends Error {
+  constructor() {
+    super("The PDF engine didn't answer in time");
+    this.name = "JobTimeoutError";
+  }
+}
+
+/** Generous time allowed for one job: 1 minute plus 1 minute per started 25 MB of input. */
+export function jobTimeoutMs(totalBytes: number): number {
+  return 60_000 + Math.ceil(totalBytes / (25 * 1024 * 1024)) * 60_000;
+}
+
 /** Thrown when a tool other than Decrypt gets a PDF that needs a password to open. */
 export class PasswordProtectedError extends Error {
   readonly fileName: string;
@@ -95,6 +121,12 @@ export function describeQpdfError(
   phase: JobPhase,
   options: { nameFiles?: boolean } = {},
 ): ErrorDescription {
+  if (error instanceof JobTimeoutError) {
+    return {
+      message:
+        "This file took too long to process on this device. It may be too big for its memory. Try a smaller file or a computer.",
+    };
+  }
   if (phase === "load") return { message: "Couldn't load the PDF engine. Check your connection and reload." };
   if (error instanceof PasswordProtectedError) {
     const subject = options.nameFiles ? `“${error.fileName}”` : "This PDF";
