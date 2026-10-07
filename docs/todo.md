@@ -64,7 +64,7 @@ Also keep one real-world PDF of your own handy.
 - [ ] Compressing that downloaded file again → "No smaller version", the qpdf note, and no download button.
 - [ ] `protected.pdf` → password-protected error with the Decrypt link.
 
-## Task 9: Info (not ready yet)
+## Task 9: Info (ready)
 
 - [ ] `plain.pdf` → title "Plain sample", author "Test Author", a created date, 5 pages, PDF 1.7, Letter, "Not encrypted", file size, Fast web view "No", Attachments "None".
 - [ ] `restricted.pdf` → "Restrictions only (opens without a password)" with "AES-256" and "Printing" badges.
