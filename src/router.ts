@@ -3,6 +3,7 @@ import { createBrowserRouter } from "react-router";
 import { AppShell } from "@/components/AppShell";
 import { RouteError } from "@/components/RouteError";
 import { HomePage } from "@/pages/HomePage";
+import { NotFoundPage } from "@/pages/NotFoundPage";
 import { tools } from "@/tools";
 
 // The error boundary lives on a pathless route inside AppShell: it catches failures from every page,
@@ -13,7 +14,11 @@ export const router = createBrowserRouter([
     children: [
       {
         ErrorBoundary: RouteError,
-        children: [{ path: "/", Component: HomePage }, ...tools.map((tool) => ({ path: tool.path, lazy: tool.load }))],
+        children: [
+          { path: "/", Component: HomePage },
+          ...tools.map((tool) => ({ path: tool.path, lazy: tool.load })),
+          { path: "*", Component: NotFoundPage },
+        ],
       },
     ],
   },

@@ -69,3 +69,13 @@ test("a page that fails to load shows the error screen inside the shell", async 
   await page.getByRole("link", { name: "Back to home" }).click();
   await expect(page).toHaveURL("/");
 });
+
+test("an unknown address shows Page not found inside the shell", async ({ page }) => {
+  await page.goto("/no-such-tool");
+  await expect(page.getByText("Page not found")).toBeVisible();
+  await expect(page.locator("header").getByRole("link", { name: "PDF Toolbox" })).toBeVisible();
+  await expect(page.locator("footer")).toBeVisible();
+  await page.getByRole("link", { name: "Back to home" }).click();
+  await expect(page).toHaveURL("/");
+  await expect(page.getByRole("link", { name: "Open tool" })).toHaveCount(6);
+});
