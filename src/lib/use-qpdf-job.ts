@@ -1,6 +1,7 @@
 import type { Qpdf } from "@mssio/qpdf-wasm";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { markJobFinished, markJobStarted } from "@/lib/crash-guard";
 import { describeQpdfError, type ErrorDescription, getQpdf, type JobPhase } from "@/lib/qpdf";
 
 /**
@@ -25,6 +26,7 @@ export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) 
       setBusy(true);
       setError(null);
       let phase: JobPhase = "load";
+      markJobStarted();
       try {
         const qpdf = await getQpdf();
         phase = "run";
@@ -34,6 +36,7 @@ export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) 
         if (id === generation.current) setError(describeQpdfError(caught, phase, { nameFiles }));
         return null;
       } finally {
+        markJobFinished();
         if (id === generation.current) setBusy(false);
       }
     },

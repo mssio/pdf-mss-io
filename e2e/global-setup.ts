@@ -24,6 +24,8 @@ export default async function globalSetup() {
     await writeFile(fixture("empty.pdf"), "");
     await writeFile(fixture("oversize.pdf"), "");
     await truncate(fixture("oversize.pdf"), 260 * 1024 * 1024); // sparse; only its size is ever checked
+    await writeFile(fixture("phone-oversize.pdf"), "");
+    await truncate(fixture("phone-oversize.pdf"), 120 * 1024 * 1024); // over the phone limit, under the computer one
   } finally {
     qpdf.terminate();
   }

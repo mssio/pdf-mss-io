@@ -1,6 +1,7 @@
 import { Moon, Sun } from "lucide-react";
 import { Link, Outlet } from "react-router";
 
+import { CrashNotice } from "@/components/CrashNotice";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/lib/use-theme";
 import { tools } from "@/tools";
@@ -41,6 +42,7 @@ export function AppShell() {
         </div>
       </header>
       <main className="flex-1">
+        <CrashNotice />
         <Outlet />
       </main>
       <footer className="border-t border-border/60 py-6 text-center text-xs text-muted-foreground">
