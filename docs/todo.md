@@ -50,6 +50,8 @@ Also keep one real-world PDF of your own handy.
 - [ ] `plain.pdf` + `restricted.pdf` → "2 files, 7 pages." plus the note that restrictions aren't kept; `merged.pdf` has the pages in the chosen order.
 - [ ] Adding `protected.pdf` → the error names "protected.pdf" and links to Decrypt.
 - [ ] Keyboard only: Tab reaches the drop zone (Enter opens the file picker) and every row button.
+- [ ] Adding a non-PDF renamed to `.pdf` (or an empty file) → the error names that file.
+- [ ] After removing the file an error was about, the error disappears.
 
 ## Task 7: Extract pages (ready)
 
@@ -70,6 +72,7 @@ Also keep one real-world PDF of your own handy.
 - [ ] `restricted.pdf` → "Restrictions only (opens without a password)" with "AES-256" and "Printing" badges.
 - [ ] `protected.pdf` → password-protected error with the Decrypt link.
 - [ ] Your real-world PDF → no crash; missing fields are simply left out.
+- [ ] A linearized PDF (e.g. the Encrypt/Compress output re-saved with "fast web view", or any web-optimized PDF) shows the "Linearized" badge; `plain.pdf` shows "No".
 
 ## Task 10: PWA and offline (ready)
 
@@ -89,6 +92,7 @@ Desktop (`npm run preview`; Chrome plus Safari or Firefox):
 - [ ] Both themes look right on every page.
 - [ ] Window 375 px wide: header shows only Home + theme toggle; home grid is one column; nothing overflows.
 - [ ] A file over 250 MB (`mkfile 260m big.pdf`) → size-limit error and the button is disabled.
+- [ ] With the dev server stopped mid-session, clicking a tool you haven't opened yet shows "Something went wrong" with Reload / Back to home, inside the normal header and footer.
 
 Phone (deploy `dist/` somewhere with HTTPS, or `npm run preview -- --host` on the same Wi-Fi for the non-offline checks):
 
