@@ -19,8 +19,8 @@ export function ResultCard({ title, description, download, anotherLabel, onAnoth
     <div className="mx-auto max-w-lg px-4 py-10 sm:px-6 sm:py-14">
       <Card>
         <CardHeader>
-          <CardTitle>{title}</CardTitle>
-          <CardDescription>{description}</CardDescription>
+          <CardTitle className="break-words">{title}</CardTitle>
+          <CardDescription className="break-words">{description}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {children}

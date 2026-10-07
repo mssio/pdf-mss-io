@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { CardContent, CardFooter } from "@/components/ui/card";
 import { outputFilename } from "@/lib/filename";
-import { formatBytes, sizeChange } from "@/lib/format";
+import { describeSizeChange, sizeChange } from "@/lib/format";
 import { checkSize, isLikelyPhone } from "@/lib/limits";
 import { assertOutput, ensureNoOpenPassword, logWarnings } from "@/lib/qpdf";
 import { useBlobUrl } from "@/lib/use-blob-url";
@@ -62,7 +62,7 @@ export function Component() {
     return summary.smaller && result.download ? (
       <ResultCard
         title="Your PDF is smaller"
-        description={`${formatBytes(summary.before)} → ${formatBytes(summary.after)} (−${summary.percent}%)`}
+        description={describeSizeChange(summary.before, summary.after)}
         download={{ ...result.download, label: "Download compressed PDF" }}
         anotherLabel="Compress another file"
         onAnother={compressAnother}
@@ -70,7 +70,7 @@ export function Component() {
     ) : (
       <ResultCard
         title="No smaller version"
-        description={`${formatBytes(summary.before)} → ${formatBytes(summary.after)}`}
+        description={describeSizeChange(summary.before, summary.after)}
         anotherLabel="Compress another file"
         onAnother={compressAnother}
       >

@@ -18,6 +18,14 @@ export function sizeChange(before: number, after: number): { smaller: boolean; p
   return { smaller: after < before, percent: percent === 0 ? 0 : percent };
 }
 
+/** "1000 B → 730 B (−27%)"; says "less than 1% smaller" when the saving rounds to 0. */
+export function describeSizeChange(before: number, after: number): string {
+  const range = `${formatBytes(before)} → ${formatBytes(after)}`;
+  const { smaller, percent } = sizeChange(before, after);
+  if (!smaller) return range;
+  return percent >= 1 ? `${range} (−${percent}%)` : `${range} (less than 1% smaller)`;
+}
+
 const PDF_DATE = /^(?:D:)?(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?(?:(Z)|([+-])(\d{2})'?(\d{2})?'?)?/;
 
 /** Parses a PDF date string ("D:20260101120000+07'00'"); null when it isn't one. */

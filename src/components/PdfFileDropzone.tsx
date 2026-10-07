@@ -31,6 +31,8 @@ export function PdfFileDropzone({
   const dragDepth = useRef(0);
   const [isDragging, setIsDragging] = useState(false);
   const hintId = useId();
+  const labelId = useId();
+  const nameId = useId();
 
   function handle(files: File[]) {
     const { accepted, rejectedCount } = pickPdfFiles(files, multiple);
@@ -85,12 +87,12 @@ export function PdfFileDropzone({
 
   return (
     <div className="grid gap-2">
-      <Label htmlFor={id}>{label}</Label>
+      <Label id={labelId} htmlFor={id}>{label}</Label>
       <div
         role="button"
         tabIndex={disabled ? -1 : 0}
-        aria-labelledby={id}
-        aria-describedby={hintId}
+        aria-labelledby={labelId}
+        aria-describedby={selectedName && !multiple ? `${nameId} ${hintId}` : hintId}
         aria-disabled={disabled || undefined}
         onKeyDown={(e) => {
           if (disabled) return;
@@ -118,6 +120,7 @@ export function PdfFileDropzone({
           accept="application/pdf,.pdf"
           multiple={multiple}
           disabled={disabled}
+          tabIndex={-1}
           className="sr-only"
           onChange={(e) => {
             handle(Array.from(e.currentTarget.files ?? []));
@@ -127,7 +130,7 @@ export function PdfFileDropzone({
         {selectedName && !multiple ? (
           <>
             <FileText className="size-8 text-muted-foreground" aria-hidden />
-            <p className="text-sm font-medium break-all">{selectedName}</p>
+            <p id={nameId} className="text-sm font-medium break-all">{selectedName}</p>
             <p id={hintId} className="text-xs text-muted-foreground">
               Drop another PDF or click to replace
             </p>

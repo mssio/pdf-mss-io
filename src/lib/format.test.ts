@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { formatBytes, parsePdfDate, sizeChange } from "@/lib/format";
+import { describeSizeChange, formatBytes, parsePdfDate, sizeChange } from "@/lib/format";
 
 describe("formatBytes", () => {
   test.each([
@@ -35,4 +35,13 @@ describe("parsePdfDate", () => {
   });
 
   test("garbage → null", () => expect(parsePdfDate("yesterday")).toBeNull());
+});
+
+describe("describeSizeChange", () => {
+  test.each([
+    [1000, 730, "1000 B → 730 B (−27%)"],
+    [1000, 999, "1000 B → 999 B (less than 1% smaller)"],
+    [1000, 1000, "1000 B → 1000 B"],
+    [1000, 1100, "1000 B → 1.1 KB"],
+  ])("%d → %d", (before, after, text) => expect(describeSizeChange(before, after)).toBe(text));
 });
