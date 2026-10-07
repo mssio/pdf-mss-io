@@ -18,6 +18,8 @@ test.describe("on a phone", () => {
 });
 
 test("a computer accepts the same file", async ({ page }) => {
+  // Pin a desktop-sized memory so a low-memory test machine can't flip this into the phone limit.
+  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "deviceMemory", { get: () => 8 }));
   await page.goto("/decrypt");
   await chooseFiles(page, "phone-oversize.pdf");
   await expect(page.getByText(/files must be .* or less in total/)).toHaveCount(0);
@@ -37,6 +39,30 @@ test("a job cut off by a reload is explained once after the reload", async ({ pa
   await expect(page.getByText(CRASH_NOTICE)).toHaveCount(0);
   await page.reload();
   await expect(page.getByText(CRASH_NOTICE)).toHaveCount(0);
+});
+
+test("a running job writes the note and removes it when it finishes", async ({ page }) => {
+  await page.addInitScript(() => {
+    const log: string[] = [];
+    (window as unknown as { noteLog: string[] }).noteLog = log;
+    const { setItem, removeItem } = Storage.prototype;
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (key === "pdf-mss-io-job-running") log.push("set");
+      return setItem.call(this, key, value);
+    };
+    Storage.prototype.removeItem = function (key: string) {
+      if (key === "pdf-mss-io-job-running") log.push("remove");
+      return removeItem.call(this, key);
+    };
+  });
+  await page.goto("/decrypt");
+  await expect(page.locator("main h1")).toBeVisible();
+  await page.evaluate(() => ((window as unknown as { noteLog: string[] }).noteLog.length = 0)); // ignore start-up clearing
+  await chooseFiles(page, "restricted.pdf");
+  await page.getByRole("button", { name: "Decrypt", exact: true }).click();
+  await expect(page.getByText("Your PDF is ready")).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { noteLog: string[] }).noteLog)).toEqual(["set", "remove"]);
+  expect(await page.evaluate(() => sessionStorage.getItem("pdf-mss-io-job-running"))).toBeNull();
 });
 
 test("a job that finishes leaves no notice", async ({ page }) => {

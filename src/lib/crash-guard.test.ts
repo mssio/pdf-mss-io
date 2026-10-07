@@ -24,11 +24,30 @@ describe("crash guard", () => {
     expect(hadCrashedJob(storage)).toBe(false);
   });
 
-  test("a job that never finished (page reloaded mid-job) is reported once", () => {
+  test("a note left by a page load that was killed mid-job is reported once", () => {
     const storage = memoryStorage();
-    markJobStarted(storage);
+    storage.setItem("pdf-mss-io-job-running", "1"); // written by the page that was killed
     expect(hadCrashedJob(storage)).toBe(true);
     clearCrashedJob(storage);
+    expect(hadCrashedJob(storage)).toBe(false);
+  });
+
+  test("start-up clearing leaves the note of a job running in this page alone", () => {
+    const storage = memoryStorage();
+    markJobStarted(storage);
+    clearCrashedJob(storage);
+    expect(hadCrashedJob(storage)).toBe(true);
+    markJobFinished(storage);
+    expect(hadCrashedJob(storage)).toBe(false);
+  });
+
+  test("an earlier job finishing doesn't clear the note of a job still running", () => {
+    const storage = memoryStorage();
+    markJobStarted(storage); // job A
+    markJobStarted(storage); // job B
+    markJobFinished(storage); // A finishes (e.g. abandoned after reset)
+    expect(hadCrashedJob(storage)).toBe(true);
+    markJobFinished(storage); // B finishes
     expect(hadCrashedJob(storage)).toBe(false);
   });
 

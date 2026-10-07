@@ -35,9 +35,12 @@ describe("checkSize on a phone", () => {
 describe("isLikelyPhone", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  function stub(deviceMemory: number | undefined, coarseNarrow: boolean) {
+  /** `matching` lists the media queries that match on the stubbed device. */
+  function stub(deviceMemory: number | undefined, coarseNarrow: boolean, matching: string[] = []) {
     vi.stubGlobal("navigator", { deviceMemory });
-    vi.stubGlobal("matchMedia", (query: string) => ({ matches: coarseNarrow && query.includes("coarse") }));
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: matching.includes(query) || (coarseNarrow && query.includes("max-width")),
+    }));
   }
 
   test("a narrow touch screen is a phone, even when Chrome reports plenty of memory", () => {
@@ -47,6 +50,11 @@ describe("isLikelyPhone", () => {
 
   test("an iPhone (no deviceMemory) is a phone", () => {
     stub(undefined, true);
+    expect(isLikelyPhone()).toBe(true);
+  });
+
+  test("a phone held sideways (wider than 820 px, but short) is still a phone", () => {
+    stub(undefined, false, ["(pointer: coarse) and (max-height: 500px)"]);
     expect(isLikelyPhone()).toBe(true);
   });
 

@@ -30,11 +30,16 @@ export function checkSize(total: number, likelyPhone: boolean): SizeCheck {
   return { ok: true };
 }
 
-/** A small touch screen, or a device that reports little memory (Chromium's deviceMemory). */
+const PHONE_QUERIES = [
+  "(pointer: coarse) and (max-width: 820px)", // phone (or small tablet) held upright
+  "(pointer: coarse) and (max-height: 500px)", // phone held sideways: wide, but short
+];
+
+/** A small touch screen in either orientation, or a device that reports little memory (Chromium's deviceMemory). */
 export function isLikelyPhone(): boolean {
   if (typeof navigator === "undefined") return false;
-  const coarseNarrow =
-    typeof matchMedia === "function" && matchMedia("(pointer: coarse) and (max-width: 820px)").matches;
+  const smallTouchScreen =
+    typeof matchMedia === "function" && PHONE_QUERIES.some((query) => matchMedia(query).matches);
   const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-  return coarseNarrow || (typeof memory === "number" && memory <= 4);
+  return smallTouchScreen || (typeof memory === "number" && memory <= 4);
 }
