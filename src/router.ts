@@ -5,13 +5,16 @@ import { RouteError } from "@/components/RouteError";
 import { HomePage } from "@/pages/HomePage";
 import { tools } from "@/tools";
 
-// ErrorBoundary sits on each child: a boundary on the layout route would replace AppShell itself.
+// The error boundary lives on a pathless route inside AppShell: it catches failures from every page,
+// including a lazy page whose code fails to load, while the shell's header and footer stay visible.
 export const router = createBrowserRouter([
   {
     Component: AppShell,
     children: [
-      { path: "/", Component: HomePage, ErrorBoundary: RouteError },
-      ...tools.map((tool) => ({ path: tool.path, lazy: tool.load, ErrorBoundary: RouteError })),
+      {
+        ErrorBoundary: RouteError,
+        children: [{ path: "/", Component: HomePage }, ...tools.map((tool) => ({ path: tool.path, lazy: tool.load }))],
+      },
     ],
   },
 ]);

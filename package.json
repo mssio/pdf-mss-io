@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "npm run build && playwright test",
     "icons": "pwa-assets-generator"
   },
   "engines": {
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@babel/core": "^8.0.6",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@rolldown/plugin-babel": "^0.2.4",
     "@tailwindcss/vite": "^4.3.3",
     "@types/babel__core": "^7.20.5",
