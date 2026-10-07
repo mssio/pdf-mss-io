@@ -71,7 +71,7 @@ Also keep one real-world PDF of your own handy.
 - [ ] `protected.pdf` → password-protected error with the Decrypt link.
 - [ ] Your real-world PDF → no crash; missing fields are simply left out.
 
-## Task 10: PWA and offline (not ready yet)
+## Task 10: PWA and offline (ready)
 
 Run `npm run build && npm run preview` and open http://localhost:4173 in Chrome.
 
