@@ -2,7 +2,7 @@
 
 Date: 2026-10-06
 Status: approved; revised 2026-10-06 (latest stable versions, password-protected PDFs rejected outside Decrypt,
-release 1.0.0 on `@mssio/qpdf-wasm` 1.0.0)
+release 1.0.0 on `@mssio/qpdf-wasm` 1.0.0; Playwright E2E tests and never-saved password fields)
 
 ## Goal
 
@@ -32,6 +32,8 @@ that referred to the server changes.
 | Versions | Latest stable of every package (section 1), verified to build, lint and test together on 2026-10-06. |
 | Runtime | Node 24 LTS (`.nvmrc` = `24`, `engines.node` = `>=24`). Node 25 is end-of-life and Vitest 5 doesn't support it. |
 | Package manager | npm. |
+| E2E tests | Playwright against the production build (`vite preview`), run locally with `npm run test:e2e` (no CI). Chromium runs every spec; WebKit runs the offline spec only. See section 9. |
+| Password fields | No `<input type="password">` anywhere. Password inputs use `SecretInput` (masked text field + password-manager ignore attributes) so neither the browser nor a password manager offers to save them. See section 10. |
 | Release | The app ships as **version 1.0.0**: `package.json` `version` is `1.0.0`, `CHANGELOG.md` has a 1.0.0 entry, `main` is tagged `v1.0.0`, and a GitHub release `v1.0.0` carries `pdf-toolbox-1.0.0.zip` (the built `dist/`). See section 8. |
 
 Verified with throwaway probes against the real package (Node, 2026-10-06), using valid PDFs, first
@@ -65,6 +67,7 @@ qpdf-in-wasm issue, to be reported upstream; the app guards against it).
 | @types/react, @types/react-dom | 19.3.0 | |
 | @types/node | ^24 | matches the Node 24 runtime, not the latest 26.x |
 | @mssio/qpdf-wasm | 1.0.0 | requires Node ≥ 24, matching the runtime |
+| @playwright/test | 1.63.0 | dev only; browsers installed with `npx playwright install chromium webkit` (~300 MB, outside the repo) |
 | lucide-react / clsx / tailwind-merge / class-variance-authority | 1.52.0 / 2.1.1 / 3.7.0 / 0.7.1 | |
 | @radix-ui/react-slot / -label / -checkbox / -separator | 1.4.0 / 2.1.16 / 1.3.12 / 1.1.16 | |
 
@@ -88,6 +91,7 @@ src/components/ErrorBox.tsx         the old red error paragraph, optional muted 
 src/components/SizeNotice.tsx       over-limit error or phone warning for the selected total
 src/components/ui/{button,card,input,label}.tsx           ported shadcn, unchanged
 src/components/ui/{checkbox,alert,badge,separator}.tsx    added from shadcn (new-york), same tokens
+src/components/ui/secret-input.tsx  masked, never-saved password input (section 10)
 src/lib/utils.ts            cn()
 src/lib/theme.ts            THEME_STORAGE_KEY = "pdf-mss-io-theme" (same key as old app)
 src/lib/use-theme.ts        ported unchanged
@@ -105,6 +109,8 @@ src/lib/pdf-info.ts         parseQpdfJson(): qpdf --json → PdfDetails
 src/pages/HomePage.tsx      hero kept; grid of tool cards from the registry
 src/pages/{Decrypt,Encrypt,Merge,Extract,Compress,Info}Page.tsx
 src/test/make-pdf.ts        builds valid PDFs in memory for tests
+playwright.config.ts        E2E config (section 9)
+e2e/                        Playwright specs, global setup and helpers (section 9)
 ```
 
 Scaffold leftovers removed: `src/App.tsx`, `src/App.css`, `src/assets/*`, `public/icons.svg`,
@@ -193,14 +199,14 @@ Same form and copy as before except:
 - Intro: "Upload an encrypted PDF and enter its password. Decryption runs entirely in your browser
   with `qpdf` compiled to WebAssembly. Your file never leaves your device."
 - Card note (amber shield kept): "Your file and password stay on this device. Nothing is uploaded."
-- Password field is **optional**: label "Password", placeholder "Document open password", help text
+- Password field (`SecretInput`, section 10) is **optional**: label "Password", placeholder "Document open password", help text
   "Leave empty if the PDF opens without a password but has restrictions." Empty → `password: ""`.
   Decrypting a restriction-only PDF with an empty password removes its restrictions.
 - Result: "Decrypted in your browser. Download it now; the file isn't stored anywhere."
 - Unencrypted input is allowed (qpdf returns a copy).
 
 ### Encrypt (`/encrypt`)
-- Fields: PDF; "Password to open" + "Confirm password" (`validateNewPassword`: empty → "Password is
+- Fields: PDF; "Password to open" + "Confirm password", both `SecretInput` (section 10) (`validateNewPassword`: empty → "Password is
   required."; mismatch → "Passwords don't match.").
 - "Permissions" (checkboxes, all checked by default): Allow printing, Allow editing, Allow copying
   text and images, Allow comments and form filling → `allow.{print,modify,extract,annotate}`.
@@ -313,21 +319,88 @@ size limit error and phone warning; theme toggle persists without flash; direct 
 URL; home page loads no `.wasm`; PWA: service worker active, `qpdf*.wasm` precached, offline reload
 of a tool page and a successful run offline.
 
+Browser-level behavior is covered by the Playwright suite in section 9.
+
 ## 8. Release 1.0.0
 
 - `package.json`: `"version": "1.0.0"`; `@mssio/qpdf-wasm` installed as `^1.0.0`.
 - `CHANGELOG.md` (new, Keep a Changelog format) with a `## [1.0.0] - <release date>` entry listing
   the six tools, offline/PWA support, the size limit and the port from the Bun server.
 - README states the current version and links the changelog.
-- `docs/todo.md` lists every manual check the owner must do (browser, offline, phone). The release
-  does not start until every box in it is ticked.
+- `docs/todo.md` has two parts: an "Automated checks (Playwright)" table mapping each check to the
+  spec file that covers it, and "Owner checks" boxes for what needs a person. The release does not
+  start until `npm run test:e2e` passes and every owner box is ticked.
 - Release steps (each needs the owner's go-ahead, since they publish or touch `main`): open a PR from
   `port-vite-wasm` to `main`; after it merges, tag the merge commit `v1.0.0` and push the tag; build
   `dist/`, zip it as `pdf-toolbox-1.0.0.zip`, and create the GitHub release `v1.0.0` with the
   changelog entry as notes and the zip attached.
 
+## 9. End-to-end tests (Playwright)
+
+**Goal:** automate every browser check that doesn't need human eyes or a real phone, so the owner's
+manual list shrinks to about 9 items and the same checks run on every future change.
+
+**Setup**
+- `@playwright/test` 1.63.0 (dev). One-time `npx playwright install chromium webkit`.
+- `playwright.config.ts`: `testDir: "e2e"`, `globalSetup: "e2e/global-setup.ts"`,
+  `webServer` = `vite preview --port 4173 --strictPort` (`baseURL` `http://localhost:4173`),
+  projects `chromium` (Desktop Chrome, every spec) and `webkit` (Desktop Safari,
+  `testMatch: /offline\.spec\.ts/` only). The offline spec starts its own server on a free port
+  (asked from the OS with `net.createServer().listen(0)`), so parallel projects never collide.
+- Script `"test:e2e": "npm run build && playwright test"`. `npm test` stays unit + integration only.
+- Git-ignored: `e2e/.fixtures/`, `test-results/`, `playwright-report/`.
+
+**Fixtures** (`e2e/global-setup.ts`, regenerated each run with `makePdf` + the real qpdf in Node):
+`plain.pdf` (5 pages, title "Plain sample"), `two-pages.pdf`, `protected.pdf` (password `open-me`),
+`restricted.pdf` (no open password, printing denied), `linearized.pdf`, `not-a-pdf.pdf` (text with a
+`.pdf` name), `empty.pdf` (0 bytes), `oversize.pdf` (260 MB sparse file; size check only, never parsed).
+
+**Helpers** (`e2e/helpers.ts`): `chooseFiles(page, ...names)` (sets the hidden file input),
+`download(page, linkName)` → saved path + suggested filename, and `inspectPdf(path, password?)` →
+`{ encrypted, pageCount, capabilities }` using qpdf in Node, so downloads are verified for real.
+
+**Specs**
+- `e2e/shell.spec.ts`: logo + "PDF Toolbox" header, Home link, theme toggle; theme persists across
+  reload with no flash (dark class present on first paint); follows `prefers-color-scheme` when no
+  choice is saved; footer copy; every tool URL loads directly; the home page requests no `.wasm`;
+  at 375 px `document.documentElement.scrollWidth <= innerWidth` on home and every tool; the route
+  error screen appears when a tool's JS chunk is blocked (`page.route` abort) and keeps header/footer.
+- `e2e/decrypt.spec.ts`, `encrypt.spec.ts`, `merge.spec.ts`, `extract.spec.ts`, `compress.spec.ts`,
+  `info.spec.ts`: every automatable box from `docs/todo.md` for that tool — exact messages, the "Go
+  to Decrypt" link, download names, outputs verified with `inspectPdf` (decrypted → not encrypted;
+  encrypted → needs the password, chosen permissions; merged/extracted page counts and order;
+  compressed smaller and "No smaller version" on a second pass), Merge keyboard path (Tab/Enter to the
+  drop zone, row buttons focusable), the 260 MB size error with the button disabled.
+- `e2e/password-fields.spec.ts`: no `input[type=password]` on any page; Decrypt/Encrypt password
+  inputs carry the ignore attributes and computed `-webkit-text-security: disc`.
+- `e2e/offline.spec.ts` (Chromium and WebKit): starts its own `vite preview` on a free port, opens
+  `/decrypt`, waits for `navigator.serviceWorker.ready` and a cached `qpdf-*.wasm`, reloads so the
+  worker controls the page, **stops the server**, then navigates to `/info` and `/decrypt` and
+  decrypts `protected.pdf` successfully. (Playwright's `context.setOffline` breaks navigation in
+  WebKit, so stopping the server is the offline technique; verified 2026-10-06 in both engines.)
+- `e2e/screenshots.spec.ts` (Chromium): home and each tool, light and dark, at 375 × 812 and
+  1280 × 800, saved to `test-results/screenshots/<page>-<theme>-<width>.png` for the owner's visual
+  review. It asserts nothing beyond the page rendering.
+
+## 10. Password fields that are never saved
+
+- `src/components/ui/secret-input.tsx` exports `SecretInput`: the shadcn `Input` with `type="text"`,
+  class `[-webkit-text-security:disc]`, `autoComplete="off"`, `autoCorrect="off"`,
+  `autoCapitalize="off"`, `spellCheck={false}`, and `data-1p-ignore`, `data-lpignore="true"`,
+  `data-bwignore`, `data-form-type="other"`. All other props pass through.
+- Used for Decrypt "Password" and Encrypt "Password to open" / "Confirm password". No
+  `type="password"` input exists anywhere in the app.
+- Why: browsers ignore `autocomplete="off"` on password inputs and offer to save them on submit;
+  a masked text field isn't treated as a password, and the data attributes opt out of 1Password,
+  LastPass, Bitwarden and Dashlane. `-webkit-text-security` works in Chrome, Edge, Safari and
+  Firefox ≥ 114.
+- Trade-offs (accepted): screen readers may read the typed characters; password managers can't
+  fill saved PDF passwords; no show/hide toggle.
+- Verification: Playwright (section 9) checks the markup; the owner checks that no save prompt
+  appears in their browser and password manager.
+
 ## Out of scope
 
-Docker/deploy scripts; password fields outside Decrypt; split, rotate, linearize, repair,
-thumbnails, image conversion; update-prompt UI; drag-to-reorder; browser E2E automation; component
-tests (no jsdom); reporting the package issue (owner's call; a repro can be provided).
+Docker/deploy scripts; password fields for input PDFs outside Decrypt; CI; split, rotate, linearize, repair,
+thumbnails, image conversion; update-prompt UI; drag-to-reorder; component
+tests (no jsdom; covered by E2E instead); Firefox E2E runs; automating real-phone checks; reporting the package issue (owner's call; a repro can be provided).
