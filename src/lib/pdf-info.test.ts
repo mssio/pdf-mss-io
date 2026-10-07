@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { describePageSize, parseQpdfJson } from "@/lib/pdf-info";
+import { describePageSize, isLinearized, parseQpdfJson } from "@/lib/pdf-info";
 
 const sample = {
   pages: [{ object: "4 0 R" }, { object: "5 0 R" }],
@@ -85,4 +85,12 @@ describe("describePageSize", () => {
   ])("%j → %s", (size, expected) => {
     expect(describePageSize(size)).toBe(expected);
   });
+});
+
+describe("isLinearized", () => {
+  test("linearized", () =>
+    expect(isLinearized({ exitCode: 0, stdout: "in.pdf: no linearization errors\n" })).toBe(true));
+  test("not linearized (qpdf still exits 0)", () =>
+    expect(isLinearized({ exitCode: 0, stdout: "in.pdf is not linearized\n" })).toBe(false));
+  test("exit code 2", () => expect(isLinearized({ exitCode: 2, stdout: "no linearization errors" })).toBe(false));
 });

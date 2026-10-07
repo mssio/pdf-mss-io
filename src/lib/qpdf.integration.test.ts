@@ -1,8 +1,14 @@
 import { createQpdf, type Qpdf } from "@mssio/qpdf-wasm";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import { assertOutput, describeQpdfError, ensureNoOpenPassword, PasswordProtectedError } from "@/lib/qpdf";
-import { parseQpdfJson, QPDF_JSON_ARGS } from "@/lib/pdf-info";
+import {
+  assertOutput,
+  describeQpdfError,
+  ensureNoOpenPassword,
+  PasswordProtectedError,
+  UnreadablePdfError,
+} from "@/lib/qpdf";
+import { isLinearized, parseQpdfJson, QPDF_JSON_ARGS } from "@/lib/pdf-info";
 import { generateOwnerPassword } from "@/lib/passwords";
 import { makePdf } from "@/test/make-pdf";
 
@@ -64,9 +70,14 @@ describe("ensureNoOpenPassword", () => {
     expect(await ensureNoOpenPassword(qpdf, pdfFile(makePdf(4)))).toMatchObject({ encrypted: false, pageCount: 4 });
   });
 
-  test("passes through non-PDF errors", async () => {
-    const error = await ensureNoOpenPassword(qpdf, pdfFile(new TextEncoder().encode("hello"))).catch((e: unknown) => e);
+  test("names a file that isn't a readable PDF", async () => {
+    const error = await ensureNoOpenPassword(qpdf, pdfFile(new TextEncoder().encode("hello"), "notes.pdf")).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(UnreadablePdfError);
+    expect((error as UnreadablePdfError).fileName).toBe("notes.pdf");
     expect(describeQpdfError(error, "run").message).toBe("This file isn't a readable PDF.");
+    expect(describeQpdfError(error, "run", { nameFiles: true }).message).toBe("“notes.pdf” isn't a readable PDF.");
   });
 });
 
@@ -141,6 +152,12 @@ describe("compress", () => {
 });
 
 describe("info JSON", () => {
+  test("detects linearization", async () => {
+    const check = (file: File) => qpdf.run(["--check-linearization", "in.pdf"], { files: { "in.pdf": file } });
+    expect(isLinearized(await check(pdfFile(makePdf(3))))).toBe(false);
+    expect(isLinearized(await check(pdfFile((await qpdf.linearize(pdfFile(makePdf(3)))).output)))).toBe(true);
+  });
+
   test("parses live qpdf --json output", async () => {
     const result = await qpdf.run([...QPDF_JSON_ARGS, "in.pdf"], {
       files: { "in.pdf": pdfFile(makePdf(2, { title: "Hello" })) },

@@ -12,7 +12,7 @@ import { CardContent, CardFooter } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatBytes } from "@/lib/format";
 import { checkSize, isLikelyPhone } from "@/lib/limits";
-import { describePageSize, parseQpdfJson, QPDF_JSON_ARGS, type PdfDetails } from "@/lib/pdf-info";
+import { describePageSize, isLinearized, parseQpdfJson, QPDF_JSON_ARGS, type PdfDetails } from "@/lib/pdf-info";
 import { ensureNoOpenPassword } from "@/lib/qpdf";
 import { useQpdfJob } from "@/lib/use-qpdf-job";
 
@@ -156,7 +156,7 @@ export function Component() {
         fileSize: file.size,
         pdfVersion: info.pdfVersion,
         pageCount: info.pageCount,
-        linearized: linearization.exitCode === 0,
+        linearized: isLinearized(linearization),
         details: parseQpdfJson(JSON.parse(json.stdout)),
       };
     });

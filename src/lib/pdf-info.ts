@@ -153,3 +153,8 @@ export function describePageSize(size: PageSize): string {
   if (!size.name) return dimensions;
   return `${size.name}${size.landscape ? " landscape" : ""} · ${dimensions}`;
 }
+
+/** qpdf exits 0 whether or not the file is linearized; only the message tells them apart. */
+export function isLinearized(result: { exitCode: number; stdout: string }): boolean {
+  return result.exitCode !== 2 && /no linearization errors/.test(result.stdout);
+}
