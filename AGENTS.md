@@ -76,6 +76,24 @@ public/favicon.svg        source of every icon (`npm run icons` regenerates the 
 4. Integration test for the qpdf call in `src/lib/qpdf.integration.test.ts`.
 5. `npm run build` and confirm the new chunk appears in `dist/sw.js`'s precache list.
 
+## PWA notes
+
+- `vite-plugin-pwa` (`vite.config.ts`) uses `registerType: 'autoUpdate'`: a new deployment activates
+  on the next online launch, with no update prompt.
+- Workbox precaches `**/*.{js,css,html,svg,png,ico,wasm,webmanifest}` with
+  `maximumFileSizeToCacheInBytes: 3_000_000`. qpdf's wasm is ~2.2 MB; if an asset grows past 3 MB the
+  build fails. Raise the limit deliberately, never drop the wasm from the precache.
+- `navigateFallback: '/index.html'` makes every tool URL work offline. `start_url` and `scope` are
+  `/`, so the app must be hosted at the domain root.
+- Icons come from `public/favicon.svg`; run `npm run icons` after changing it and commit the output.
+
+## Known package issue
+
+`@mssio/qpdf-wasm` 1.0.0 (qpdf 12.4.2) runs out of wasm memory on large inputs: encrypt threw
+`std::bad_alloc` at 400 MB and at 600 MB resolved with a near-empty output instead of rejecting.
+That's why `assertOutput()` guards every download and why `MAX_TOTAL_BYTES` is 250 MB. Re-check
+both if the package is upgraded.
+
 ## Versions
 
 - Node 24 LTS (`.nvmrc`). Vitest 5 doesn't support Node 25.
@@ -92,6 +110,10 @@ npm run lint && npm test && npm run build
 All three must pass. For UI changes also run `npm run preview` and check the page in a browser,
 including dark mode and a phone-width window.
 
+Browser, offline and phone checks are listed in `docs/todo.md`. Only the owner ticks them. When a
+task finishes, mark its section `(ready)`; never start a release while any box is unticked.
+
 ## Workflow
 
-Commit each logical change and push right away. Work on a feature branch, not `main`.
+Commit each logical change and push right away on a feature branch, not `main`. Merging to `main`,
+tagging and creating releases need the owner's go-ahead.

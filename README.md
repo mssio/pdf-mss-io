@@ -64,7 +64,8 @@ location / {
 location = /index.html { add_header Cache-Control "no-cache"; }
 location = /sw.js      { add_header Cache-Control "no-cache"; }
 location /assets/      { add_header Cache-Control "public, max-age=31536000, immutable"; }
-types { application/wasm wasm; }
+# .wasm must be served as application/wasm: check nginx's mime.types has "application/wasm wasm;".
+# Add it there if missing. Don't put a separate types {} block here; it replaces the whole MIME map.
 ```
 
 **Netlify / Cloudflare Pages:** add `public/_redirects` containing `/*  /index.html  200`.
@@ -81,12 +82,14 @@ example.com {
 
 **GitHub Pages:** copy `dist/index.html` to `dist/404.html` after building.
 
-**Content-Security-Policy:** if you set one, allow `script-src 'self' 'wasm-unsafe-eval'` and
-`worker-src 'self'`.
+**Content-Security-Policy:** if you set one, allow `script-src 'self' 'wasm-unsafe-eval'` plus the
+inline theme script in `index.html` (by its `sha256-` hash, or `'unsafe-inline'`), and
+`worker-src 'self'`. Without the theme script allowance the page still works but flashes the wrong
+theme on load.
 
 ## Offline
 
-The service worker precaches the whole app, including the qpdf worker and `.wasm` (about 2.6 MB),
+The service worker precaches the whole app, including the qpdf worker and `.wasm` (about 2.7 MB in total),
 after the first online visit. New deployments activate the next time the app opens online.
 
 ## Adding a tool
@@ -96,5 +99,10 @@ after the first online visit. New deployments activate the next time the app ope
    `ResultCard`, `PdfFileDropzone`, `useQpdfJob` and `useBlobUrl` (see `CompressPage.tsx`).
 3. Add an entry to `src/tools.ts`; the route, header link and home card follow from it.
 4. Add an integration test for the qpdf call in `src/lib/qpdf.integration.test.ts`.
+
+## Release checks
+
+Manual browser, offline and phone checks live in [docs/todo.md](docs/todo.md). The owner ticks
+them; version 1.0.0 is not released while any box is unticked.
 
 See [AGENTS.md](AGENTS.md) for the rules the code follows.
