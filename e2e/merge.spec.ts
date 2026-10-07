@@ -34,19 +34,19 @@ test("restricted inputs get a note that restrictions are dropped", async ({ page
 test("problem files are named, and the error clears when the file is removed", async ({ page }) => {
   await chooseFiles(page, "plain.pdf", "protected.pdf");
   await page.getByRole("button", { name: "Merge", exact: true }).click();
-  await expect(page.getByText(/protected\.pdf.*is password-protected.*Remove its password with Decrypt first/)).toBeVisible();
+  await expect(page.getByText("“protected.pdf” is password-protected. Remove its password with Decrypt first.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Go to Decrypt" })).toBeVisible();
   await page.getByRole("button", { name: "Remove protected.pdf" }).click();
   await expect(page.getByText(/is password-protected/)).toHaveCount(0);
 
   await chooseFiles(page, "not-a-pdf.pdf");
   await page.getByRole("button", { name: "Merge", exact: true }).click();
-  await expect(page.getByText(/not-a-pdf\.pdf.*isn't a readable PDF/)).toBeVisible();
+  await expect(page.getByText("“not-a-pdf.pdf” isn't a readable PDF.")).toBeVisible();
   await page.getByRole("button", { name: "Remove not-a-pdf.pdf" }).click();
 
   await chooseFiles(page, "empty.pdf");
   await page.getByRole("button", { name: "Merge", exact: true }).click();
-  await expect(page.getByText(/empty\.pdf.*is empty/)).toBeVisible();
+  await expect(page.getByText("“empty.pdf” is empty.")).toBeVisible();
 });
 
 test("keyboard: Tab reaches the drop zone and every row button", async ({ page }) => {
