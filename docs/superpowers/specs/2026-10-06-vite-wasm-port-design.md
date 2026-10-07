@@ -187,10 +187,13 @@ empty after trimming becomes `document`):
 - `MAX_TOTAL_BYTES = 250 * 1024 * 1024`, applied to the sum of all selected inputs in every tool.
   Exactly 250 MB is allowed. Over the limit: error shown immediately, submit disabled: "Files must be
   250 MB or less in total (you selected X)."
-- `PHONE_MAX_BYTES` (100 MB until the owner's 150/200 MB phone test sets it) is a **hard** limit when
-  `isLikelyPhone()`: "On phones, files must be X MB or less in total (you selected Y). Use a computer
-  for bigger files." Reason (owner test, 2026-10-07): on an iPhone 17 a ~245 MB encrypt makes iOS kill
-  and reload the page, so qpdf never gets to report "Not enough memory"; 100 MB works.
+- `PHONE_MAX_BYTES = 250 * 1024 * 1024` is the hard limit when `isLikelyPhone()` (currently the same
+  as a computer; kept separate so it can be lowered in one line): "On phones, files must be X MB or less
+  in total (you selected Y). Use a computer for bigger files." Owner tests on an iPhone 17
+  (2026-10-07): 100, 150, 200 and ~245 MB encrypt all work in a fresh tab but take minutes; the same
+  245 MB file once made iOS reload the page and once hung, when memory was already in use. Failures
+  depend on free memory, so they're handled by the crash notice and the job safeguard (section 11)
+  rather than a lower limit.
 - `isLikelyPhone()`: `matchMedia("(pointer: coarse) and (max-width: 820px)")` matches, **or**
   `navigator.deviceMemory <= 4` (Chromium). A narrow touch screen counts as a phone even when Chrome
   reports plenty of memory.
@@ -405,6 +408,27 @@ manual list shrinks to about 9 items and the same checks run on every future cha
   fill saved PDF passwords; no show/hide toggle.
 - Verification: Playwright (section 9) checks the markup; the owner checks that no save prompt
   appears in their browser and password manager.
+
+## 11. Job status and stuck-engine safeguard
+
+**Status while a job runs** (`src/components/JobStatus.tsx`, state from `useQpdfJob`):
+- Below the busy submit button, one muted line with the step and the elapsed time (m:ss, updated
+  every second): "Loading the PDF engine… 0:03" while `getQpdf()` loads, then the tool's step label
+  ("Decrypting…", "Encrypting…", "Merging…", "Extracting pages…", "Compressing…", "Inspecting…").
+- For inputs over 50 MB it adds: "Large files can take a few minutes on phones."
+- No percentage: `@mssio/qpdf-wasm` 1.0.0 returns qpdf's output only when a job ends. A real progress
+  bar needs an `onProgress` option in the package (owner's follow-up, see docs/todo.md "After 1.0.0").
+
+**Safeguard** (`useQpdfJob` + `src/lib/qpdf.ts`):
+- Each job gets `jobTimeoutMs(totalBytes) = 60 s + 60 s per started 25 MB` (a 245 MB job: 11 min).
+- If the time runs out (a dead or frozen worker never answers — seen on iPhone), the job fails with
+  `JobTimeoutError` → "This file took too long to process on this device. It may be too big for its
+  memory. Try a smaller file or a computer."
+- The stuck engine is dropped with `resetQpdf()` (terminate it without waiting; the next
+  `getQpdf()` creates a fresh one), so later jobs in the same tab work.
+- Tests: unit tests for `jobTimeoutMs`, `resetQpdf` and the message; a Playwright test that hangs the
+  engine (its worker script never loads), fast-forwards the page clock past the time limit, checks the
+  message, then lets the worker load and checks the next job succeeds.
 
 ## Out of scope
 

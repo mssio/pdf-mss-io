@@ -22,7 +22,8 @@
 | 14 | Never-saved password fields | `SecretInput` in Decrypt/Encrypt, password-fields spec | Haiku 4.5 | ~15 min |
 | 15 | Tool specs + screenshots | 39 Playwright tests across six tools; 28 screenshots | Haiku 4.5 | ~25 min |
 | 16 | Docs + owner checklist | todo split into automated table + 10 owner boxes; README/AGENTS | Haiku 4.5 | ~15 min |
-| 17 | Release 1.0.0 | CHANGELOG, PR to `main`, tag `v1.0.0`, GitHub release with `dist` zip | Sonnet 5.5 + owner approvals | ~15 min agent, ~5 min owner |
+| 17 | Phone limit, crash notice, job status, stuck-engine safeguard (done) | 250 MB phone limit, reload notice, step + timer, job time limit with engine reset | Opus 5.5 (controller) | done |
+| 18 | Release 1.0.0 | CHANGELOG, PR to `main`, tag `v1.0.0`, GitHub release with `dist` zip | Sonnet 5.5 + owner approvals | ~15 min agent, ~5 min owner |
 
 **Total:** about 7.25 hours of agent time (Tasks 1–12 are done; Tasks 13–17 add about 1.6 hours). Subagent-driven execution adds a reviewer pass per task
 (about 10 minutes each, Opus 5.5). Model choice: Opus 5.5 for tasks that define interfaces other
@@ -57,7 +58,7 @@ shadcn (new-york) on Radix, `@mssio/qpdf-wasm` 1.0.0, `vite-plugin-pwa` 2.0, Vit
 - Code style in `src/`: double quotes, semicolons, 2-space indent (matches the ported old app). Root config files (`vite.config.ts`, `eslint.config.js`, `pwa-assets.config.ts`) keep the scaffold's single quotes and no semicolons.
 - Import alias `@/` → `src/`. Imports from React Router use `react-router` (and `react-router/dom` for `RouterProvider`), never `react-router-dom`.
 - User-facing copy is exactly as written in the spec and this plan.
-- `docs/todo.md` lists the owner's manual checks. Until Task 16 rewrites it, the controller marks a finished task's section `(ready)`; after Task 16 it is an automated-checks table plus owner boxes. Release (Task 17) needs `npm run test:e2e` to pass and every owner box ticked.
+- `docs/todo.md` lists the owner's manual checks. Until Task 16 rewrites it, the controller marks a finished task's section `(ready)`; after Task 16 it is an automated-checks table plus owner boxes. Release (Task 18) needs `npm run test:e2e` to pass and every owner box ticked.
 - E2E (Tasks 13–16): `@playwright/test` `^1.63.0`; tests run against the production build (`vite preview` on port 4173); `chromium` runs every spec, `webkit` only `e2e/offline.spec.ts`; service workers blocked except in the offline spec; no CI. E2E files follow the `src/` style (double quotes, semicolons); `playwright.config.ts` follows the root-config style (single quotes, no semicolons).
 - No `<input type="password">` anywhere: password fields use `SecretInput` (Task 14).
 - Commit after every task and push immediately (`git push`); the branch is `port-vite-wasm`. End every commit message with:
@@ -4967,7 +4968,7 @@ git push
 
 **Interfaces:**
 - Consumes: spec file names and the test titles from Tasks 13–15.
-- Produces: the release gate used by Task 17: `npm run test:e2e` passes **and** every owner box in `docs/todo.md` is ticked.
+- Produces: the release gate used by Task 18: `npm run test:e2e` passes **and** every owner box in `docs/todo.md` is ticked.
 
 - [ ] **Step 1: Rewrite `docs/todo.md`**
 
@@ -4976,7 +4977,7 @@ Replace the whole file with (all boxes unticked; the owner ticks them):
 ````markdown
 # Release checks for 1.0.0
 
-Release 1.0.0 (plan Task 17) starts only when **both** are true:
+Release 1.0.0 (plan Task 18) starts only when **both** are true:
 
 1. `npm run test:e2e` passes (all automated checks below).
 2. Every owner box at the bottom is ticked (`- [x]`).
@@ -5085,7 +5086,7 @@ grep -c -- '- \[ \]' docs/todo.md   # 10
 grep -o '](\S*)' README.md AGENTS.md
 ```
 
-Expected: all green; 10 unticked owner boxes; every relative link points at an existing file (`CHANGELOG.md` is created in Task 17).
+Expected: all green; 10 unticked owner boxes; every relative link points at an existing file (`CHANGELOG.md` is created in Task 18).
 
 - [ ] **Step 5: Commit and push**
 
@@ -5100,7 +5101,348 @@ git push
 
 ---
 
-### Task 17: Release 1.0.0
+### Task 17: Phone limit, crash notice, job status and stuck-engine safeguard (done)
+
+Added after the owner's iPhone 17 tests on 2026-10-07 (spec sections 3 and 11). Implemented test-first
+as an owner-approved bounded change (commits `a8e2c65`, `757cf45` and the job-status commit), each reviewed.
+
+**Files:**
+- Create: `src/lib/crash-guard.ts`, `src/components/CrashNotice.tsx`, `src/components/JobStatus.tsx`, `e2e/phone.spec.ts`, `e2e/job-safeguard.spec.ts`, `src/lib/crash-guard.test.ts`
+- Modify: `src/lib/limits.ts` (+ test), `src/lib/qpdf.ts` (+ tests), `src/lib/use-qpdf-job.ts`, `src/components/SizeNotice.tsx`, `src/components/AppShell.tsx`, all six pages, `e2e/global-setup.ts`, README, AGENTS.md, docs/todo.md
+
+**Interfaces (produced):**
+- `PHONE_MAX_BYTES` (250 MB), `checkSize(total, likelyPhone): { ok: true } | { ok: false; message }`, `isLikelyPhone()` (small touch screen in either orientation, or deviceMemory ≤ 4)
+- `markJobStarted`, `markJobFinished`, `hadCrashedJob`, `clearCrashedJob` (optional `Storage` argument, per-storage running-job count)
+- `resetQpdf(): void`, `class JobTimeoutError`, `jobTimeoutMs(totalBytes): number`
+- `useQpdfJob().run(job, { label?, sizeBytes? })`, `useQpdfJob().status: JobStatusState | null`; `<JobStatus status={job.status} />` in every tool's footer
+
+- [x] **Step 1: Unit tests first (RED), then `limits.ts`, `crash-guard.ts` and the `qpdf.ts` additions (GREEN)**
+
+`src/lib/limits.ts`:
+
+```ts
+import { formatBytes } from "@/lib/format";
+
+/** Hard limit for the combined size of a tool's inputs on a computer. qpdf runs out of wasm memory above this. */
+export const MAX_TOTAL_BYTES = 250 * 1024 * 1024;
+/**
+ * Hard limit on phones, kept separate so it can be lowered in one line. An iPhone 17 encrypted 100–245 MB
+ * in a fresh tab (slowly); failures depend on free memory and are handled by the crash notice and the
+ * job time limit (see jobTimeoutMs) instead.
+ */
+export const PHONE_MAX_BYTES = 250 * 1024 * 1024;
+
+export type SizeCheck = { ok: true } | { ok: false; message: string };
+
+export function totalBytes(files: readonly Blob[]): number {
+  return files.reduce((sum, file) => sum + file.size, 0);
+}
+
+export function checkSize(total: number, likelyPhone: boolean): SizeCheck {
+  if (likelyPhone && total > PHONE_MAX_BYTES) {
+    return {
+      ok: false,
+      message: `On phones, files must be ${formatBytes(PHONE_MAX_BYTES)} or less in total (you selected ${formatBytes(total)}). Use a computer for bigger files.`,
+    };
+  }
+  if (total > MAX_TOTAL_BYTES) {
+    return {
+      ok: false,
+      message: `Files must be ${formatBytes(MAX_TOTAL_BYTES)} or less in total (you selected ${formatBytes(total)}).`,
+    };
+  }
+  return { ok: true };
+}
+
+const PHONE_QUERIES = [
+  "(pointer: coarse) and (max-width: 820px)", // phone (or small tablet) held upright
+  "(pointer: coarse) and (max-height: 500px)", // phone held sideways: wide, but short
+];
+
+/** A small touch screen in either orientation, or a device that reports little memory (Chromium's deviceMemory). */
+export function isLikelyPhone(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const smallTouchScreen =
+    typeof matchMedia === "function" && PHONE_QUERIES.some((query) => matchMedia(query).matches);
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  return smallTouchScreen || (typeof memory === "number" && memory <= 4);
+}
+```
+
+`src/lib/crash-guard.ts`:
+
+```ts
+/**
+ * Remembers that a qpdf job is running, in sessionStorage (per tab, survives a reload). If the browser
+ * kills the page mid-job — iOS does this when a file is too big for its memory — the note is still
+ * there after the reload, so the app can say what happened instead of looking like a plain refresh.
+ */
+const KEY = "pdf-mss-io-job-running";
+/** Jobs still running per storage, so an earlier job finishing can't clear a later job's note. */
+const running = new WeakMap<Storage, number>();
+
+function defaultStorage(): Storage | undefined {
+  try {
+    return typeof sessionStorage === "undefined" ? undefined : sessionStorage;
+  } catch {
+    return undefined; // storage access can throw when it's disabled
+  }
+}
+
+export function markJobStarted(storage: Storage | undefined = defaultStorage()): void {
+  if (!storage) return;
+  running.set(storage, (running.get(storage) ?? 0) + 1);
+  try {
+    storage.setItem(KEY, String(Date.now()));
+  } catch {
+    // private mode or disabled storage: lose the crash notice, never the job
+  }
+}
+
+export function markJobFinished(storage: Storage | undefined = defaultStorage()): void {
+  if (!storage) return;
+  const left = Math.max(0, (running.get(storage) ?? 0) - 1);
+  running.set(storage, left);
+  if (left === 0) removeNote(storage);
+}
+
+function removeNote(storage: Storage): void {
+  try {
+    storage.removeItem(KEY);
+  } catch {
+    // see markJobStarted
+  }
+}
+
+export function hadCrashedJob(storage: Storage | undefined = defaultStorage()): boolean {
+  try {
+    return storage?.getItem(KEY) != null;
+  } catch {
+    return false;
+  }
+}
+
+/** Called once at start-up: a note from before this page load is old news after it's been shown. */
+export function clearCrashedJob(storage: Storage | undefined = defaultStorage()): void {
+  if (storage && !running.get(storage)) removeNote(storage);
+}
+```
+
+`src/lib/qpdf.ts` additions:
+
+```ts
+/**
+ * Drops the current engine so the next getQpdf() starts a fresh one. Used when a job never answers
+ * (a frozen or killed worker): never waits for the old engine, terminates it if it ever loads.
+ */
+export function resetQpdf(): void {
+  const current = pending;
+  pending = null;
+  current?.then(
+    (qpdf) => qpdf.terminate(),
+    () => {},
+  );
+}
+
+/** A job ran past jobTimeoutMs(); the engine is assumed stuck. */
+export class JobTimeoutError extends Error {
+  constructor() {
+    super("The PDF engine didn't answer in time");
+    this.name = "JobTimeoutError";
+  }
+}
+
+/** Generous time allowed for one job: 1 minute plus 1 minute per started 25 MB of input. */
+export function jobTimeoutMs(totalBytes: number): number {
+  return 60_000 + Math.ceil(totalBytes / (25 * 1024 * 1024)) * 60_000;
+}
+```
+
+`describeQpdfError` maps `JobTimeoutError` (in either phase) to "This file took too long to process on this device. It may be too big for its memory. Try a smaller file or a computer."
+
+- [x] **Step 2: E2E first (RED: `e2e/phone.spec.ts`, `e2e/job-safeguard.spec.ts`), then the hook and components (GREEN)**
+
+`src/lib/use-qpdf-job.ts`:
+
+```ts
+import type { Qpdf } from "@mssio/qpdf-wasm";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { markJobFinished, markJobStarted } from "@/lib/crash-guard";
+import {
+  describeQpdfError,
+  type ErrorDescription,
+  getQpdf,
+  type JobPhase,
+  JobTimeoutError,
+  jobTimeoutMs,
+  resetQpdf,
+} from "@/lib/qpdf";
+
+/** What a running job is doing, for JobStatus. */
+export type JobStatusState = { phase: JobPhase; label: string; startedAt: number; sizeBytes: number };
+
+export type RunOptions = {
+  /** Step shown while qpdf works, e.g. "Encrypting…". */
+  label?: string;
+  /** Total input size; sets the time limit (jobTimeoutMs) and the large-file hint. */
+  sizeBytes?: number;
+};
+
+/**
+ * Busy, status and error state for one qpdf job at a time. Results that arrive after reset() or
+ * unmount are dropped, so a slow job can't overwrite a newer screen. A job that runs past
+ * jobTimeoutMs() fails with JobTimeoutError and the (presumably stuck) engine is replaced.
+ */
+export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ErrorDescription | null>(null);
+  const [status, setStatus] = useState<JobStatusState | null>(null);
+  const generation = useRef(0);
+
+  useEffect(
+    () => () => {
+      generation.current++;
+    },
+    [],
+  );
+
+  const run = useCallback(
+    async <T>(job: (qpdf: Qpdf) => Promise<T>, { label = "Working…", sizeBytes = 0 }: RunOptions = {}): Promise<T | null> => {
+      const id = ++generation.current;
+      const startedAt = Date.now();
+      setBusy(true);
+      setError(null);
+      setStatus({ phase: "load", label, startedAt, sizeBytes });
+      let phase: JobPhase = "load";
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      markJobStarted();
+      try {
+        const work = (async () => {
+          const qpdf = await getQpdf();
+          phase = "run";
+          if (id === generation.current) setStatus({ phase: "run", label, startedAt, sizeBytes });
+          return job(qpdf);
+        })();
+        work.catch(() => {}); // if the time limit wins, a late failure must not surface as unhandled
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new JobTimeoutError()), jobTimeoutMs(sizeBytes));
+        });
+        const result = await Promise.race([work, timeout]);
+        return id === generation.current ? result : null;
+      } catch (caught) {
+        if (caught instanceof JobTimeoutError) resetQpdf();
+        if (id === generation.current) setError(describeQpdfError(caught, phase, { nameFiles }));
+        return null;
+      } finally {
+        clearTimeout(timer);
+        markJobFinished();
+        if (id === generation.current) {
+          setBusy(false);
+          setStatus(null);
+        }
+      }
+    },
+    [nameFiles],
+  );
+
+  const reset = useCallback(() => {
+    generation.current++;
+    setBusy(false);
+    setError(null);
+    setStatus(null);
+  }, []);
+  const fail = useCallback((message: string) => setError({ message }), []);
+  const clearError = useCallback(() => setError(null), []);
+
+  return { busy, error, status, run, reset, fail, clearError };
+}
+```
+
+`src/components/JobStatus.tsx`:
+
+```tsx
+import { useEffect, useState } from "react";
+
+import type { JobStatusState } from "@/lib/use-qpdf-job";
+
+const LARGE_FILE_BYTES = 50 * 1024 * 1024;
+
+function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+/** The running job's step and elapsed time (qpdf reports no percentage), plus a hint for large files. */
+export function JobStatus({ status }: { status: JobStatusState | null }) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!status) return;
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [status]);
+
+  if (!status) return null;
+  const step = status.phase === "load" ? "Loading the PDF engine…" : status.label;
+  return (
+    <div role="status" aria-live="polite" className="grid gap-0.5 text-sm text-muted-foreground">
+      <p className="tabular-nums">
+        {step} {formatElapsed(now - status.startedAt)}
+      </p>
+      {status.sizeBytes > LARGE_FILE_BYTES ? <p className="text-xs">Large files can take a few minutes on phones.</p> : null}
+    </div>
+  );
+}
+```
+
+`src/components/CrashNotice.tsx`:
+
+```tsx
+import { TriangleAlert } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { clearCrashedJob, hadCrashedJob } from "@/lib/crash-guard";
+
+/** Explains a reload that cut off a running job (see src/lib/crash-guard.ts). Shown once. */
+export function CrashNotice() {
+  const [visible, setVisible] = useState(hadCrashedJob);
+
+  useEffect(() => {
+    clearCrashedJob();
+  }, []);
+
+  if (!visible) return null;
+  return (
+    <div className="mx-auto max-w-lg px-4 pt-6 sm:px-6">
+      <Alert className="border-amber-500/50 text-amber-800 dark:text-amber-300">
+        <TriangleAlert />
+        <AlertDescription className="text-current">
+          <p>
+            The page reloaded while a file was being processed, usually because the file was too big for this
+            device's memory. Try a smaller file or a computer.
+          </p>
+          <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setVisible(false)}>
+            Dismiss
+          </Button>
+        </AlertDescription>
+      </Alert>
+    </div>
+  );
+}
+```
+
+`SizeNotice` now only renders the error; `AppShell` renders `<CrashNotice />` above `<Outlet />`. Each page passes `{ label, sizeBytes }` to `job.run` ("Decrypting…", "Encrypting…", "Merging…", "Counting pages…"/"Extracting pages…", "Compressing…", "Inspecting…") and renders `<JobStatus status={job.status} />` after its submit button (footer class `flex-wrap gap-x-4 gap-y-2 pt-6`). `e2e/global-setup.ts` adds the sparse `sixty-mb.pdf` fixture.
+
+- [x] **Step 3: Verify**
+
+`npx tsc -b && npm run lint && npm test && npm run test:e2e` → lint clean, 135 unit tests, 48 Playwright tests (twice), no stray `vite preview`.
+
+---
+
+### Task 18: Release 1.0.0
 
 **Files:**
 - Create: `CHANGELOG.md`
@@ -5205,3 +5547,18 @@ rm pdf-toolbox-1.0.0.zip
 
 Expected: `gh release view v1.0.0` lists `pdf-toolbox-1.0.0.zip`. Unzipping it gives `index.html`,
 `sw.js`, `manifest.webmanifest` and `assets/` with `qpdf-*.wasm`; that folder is what the owner hosts.
+
+- [ ] **Step 5: Clean up the owner checklist (after the release)**
+
+Once the GitHub release exists, rewrite `docs/todo.md` to keep only what's still open: drop every
+ticked owner box and the release-gate intro, keep the "Automated checks" table (it documents the E2E
+coverage) and the "After 1.0.0" section. Commit and push:
+
+```bash
+git add docs/todo.md
+git commit -m "docs: clear completed 1.0.0 checks from the todo
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NvYC5VwsQMEVA9j9Scdfc1"
+git push
+```

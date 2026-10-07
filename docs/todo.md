@@ -1,6 +1,6 @@
 # Release checks for 1.0.0
 
-Release 1.0.0 (plan Task 17) starts only when **both** are true:
+Release 1.0.0 (plan Task 18) starts only when **both** are true:
 
 1. `npm run test:e2e` passes (all automated checks below).
 2. Every owner box at the bottom is ticked (`- [x]`).
@@ -38,7 +38,8 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 | Compress: smaller result with sizes, download is smaller and a valid 5-page PDF, second pass → "No smaller version" without a download, protected input → Decrypt link | `e2e/compress.spec.ts` |
 | Info: plain PDF details, restriction badges, Linearized badge, protected input → Decrypt link | `e2e/info.spec.ts` |
 | No `type="password"` input anywhere; password fields masked and carry the password-manager opt-outs | `e2e/password-fields.spec.ts` |
-| Phones (narrow touch screen): files over the phone limit are refused with "On phones, files must be … Use a computer for bigger files."; a computer accepts the same file | `e2e/phone.spec.ts` |
+| Phones (small touch screen, either orientation): files over the phone limit are refused with "On phones, files must be … Use a computer for bigger files."; a computer gets the computer wording | `e2e/phone.spec.ts` |
+| While a job runs, the step and elapsed time show ("Loading the PDF engine… 0:05", then the tool's step) plus a hint for files over 50 MB; a stuck engine times out with "This file took too long to process on this device…" and the next job works with a fresh engine | `e2e/job-safeguard.spec.ts` |
 | A job cut off by a page reload is explained once after the reload ("The page reloaded while a file was being processed…"), and a finished job leaves no notice | `e2e/phone.spec.ts` |
 | Offline: service worker active and wasm cached, then with the server stopped `/info` and `/decrypt` load and decrypting works (Chromium and WebKit) | `e2e/offline.spec.ts` |
 
@@ -58,7 +59,24 @@ Phone (deploy `dist/` somewhere with HTTPS; `npm run preview -- --host` on the s
 
 - [x] Add to Home Screen → opens full-screen with the padlock icon.
 - [x] Encrypt a ~100 MB PDF: works, or the memory message appears (if it fails, tell Claude to lower the limits).
-- [ ] Encrypt `.private/fixtures/big-150mb.pdf` and `big-200mb.pdf` on your phone and tell Claude which works (sets the phone limit; ~245 MB reloads the page on an iPhone 17).
-- [ ] On your phone, a file over the phone limit shows "On phones, files must be … or less in total" and the button stays disabled.
+- [x] Encrypt the 100, 150, 200 and ~245 MB test files on your phone (owner reported 2026-10-07: all work on an iPhone 17 in a fresh tab, slowly; phone limit set to 250 MB).
+- [ ] On your phone, encrypting `.private/fixtures/big-200mb.pdf` shows "Encrypting… m:ss" counting up and "Large files can take a few minutes on phones." under the button.
 - [x] Airplane mode → open from the home screen → Decrypt works.
 - [ ] Every box above is ticked.
+
+## After 1.0.0 (not part of the release gate)
+
+- **Real progress bar** (owner, in the `qpdf-wasm` repo, then here): give this prompt to Claude in the
+  `@mssio/qpdf-wasm` repo:
+
+  > In `@mssio/qpdf-wasm`, add streaming progress. Give every helper's options and `run()`'s options an
+  > optional `onProgress?: (percent: number) => void`. When it's set, run qpdf with `--progress`, parse
+  > each stdout line matching `/write progress: (\d+)%/` as Emscripten prints it (don't wait for the job
+  > to end), and post `{ type: "progress", id, percent }` from the worker to the main thread. The
+  > pool/executor forwards these to that job's callback; inline (Node) mode calls it directly. Keep
+  > progress lines out of `RunResult.stdout`, don't call the callback after the job settles or after
+  > `terminate()`, and keep the API backward compatible. Add unit and browser tests (percent values
+  > rise from 0 to 100 for a large encrypt) and README docs, and release it as **1.1.0**.
+
+  Then, in this repo: upgrade to `@mssio/qpdf-wasm@^1.1.0`, pass `onProgress` from `useQpdfJob`, show a
+  percentage bar in `JobStatus`, and use "no progress for N seconds" for the stuck-engine time limit.

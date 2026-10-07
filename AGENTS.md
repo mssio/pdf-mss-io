@@ -19,7 +19,7 @@ Web Worker). It is a PWA that works offline. Design spec:
   `ensureNoOpenPassword(qpdf, file)` first and shows "Remove its password with Decrypt first".
   Restriction-only PDFs (owner password only) are accepted everywhere. No password fields outside
   Decrypt.
-- **Size limit:** `MAX_TOTAL_BYTES` (250 MB) and the phone hard limit `PHONE_MAX_BYTES` (100 MB) in `src/lib/limits.ts`
+- **Size limit:** `MAX_TOTAL_BYTES` (250 MB) and the phone hard limit `PHONE_MAX_BYTES` (250 MB, separate so it can be lowered) in `src/lib/limits.ts`
   are the only source of these numbers.
 
 ## Map
@@ -38,6 +38,7 @@ src/lib/qpdf.ts           getQpdf, ensureNoOpenPassword, assertOutput, describeQ
 src/lib/use-qpdf-job.ts   busy/error state for one job; drops stale results
 src/lib/use-blob-url.ts   owns the download blob URL and revokes it
 src/lib/crash-guard.ts    sessionStorage note while a job runs; src/components/CrashNotice.tsx explains a mid-job reload
+src/components/JobStatus.tsx  step + elapsed time under the submit button while a job runs
 src/lib/*.ts              pure helpers (filename, format, limits, pdf-files, page-ranges,
                           passwords, merge-list, pdf-info), each with a *.test.ts
 src/test/make-pdf.ts      builds valid PDFs for tests
@@ -53,8 +54,10 @@ playwright.config.ts      E2E config: vite preview :4173, chromium all specs, we
 - Pass `File` objects. Byte inputs (`Uint8Array`/`ArrayBuffer`) are **transferred** to the worker
   and become empty; pass `bytes.slice()` if you still need them (e.g. `qpdf.info(output.slice())`
   before showing `output` as a download).
-- Run jobs through `useQpdfJob().run(async (qpdf) => …)`; it maps errors with
-  `describeQpdfError` and ignores results after `reset()` or unmount.
+- Run jobs through `useQpdfJob().run(async (qpdf) => …, { label: "Encrypting…", sizeBytes })`; it maps
+  errors with `describeQpdfError`, ignores results after `reset()` or unmount, shows the step via
+  `<JobStatus status={job.status} />`, and fails a job that runs past `jobTimeoutMs(sizeBytes)` with
+  `JobTimeoutError`, replacing the stuck engine (`resetQpdf()`). Always pass the real input size.
 - Call `assertOutput(output)` on every output before it becomes a download. qpdf can "succeed" with
   a near-empty file when the wasm runs out of memory (seen with encrypt at 600 MB).
 - Log `warnings` with `logWarnings`; don't show them.
