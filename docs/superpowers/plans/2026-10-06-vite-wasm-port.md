@@ -18,15 +18,19 @@
 | 10 | PWA and offline | Manifest, generated icons, service worker precaching the wasm | Sonnet 5.5 | ~20 min |
 | 11 | Docs | README rewrite, AGENTS.md, CLAUDE.md | Sonnet 5.5 | ~20 min |
 | 12 | Final verification | All checks green; manual desktop, offline and phone pass | Opus 5.5 + owner | ~20 min agent, ~20 min owner |
-| 13 | Release 1.0.0 | CHANGELOG, PR to `main`, tag `v1.0.0`, GitHub release with `dist` zip | Sonnet 5.5 + owner approvals | ~15 min agent, ~5 min owner |
+| 13 | Playwright setup, shell + offline tests | `npm run test:e2e`; fixtures, helpers; route error screen fixed for lazy pages | Sonnet 5.5 | ~30 min |
+| 14 | Never-saved password fields | `SecretInput` in Decrypt/Encrypt, password-fields spec | Haiku 4.5 | ~15 min |
+| 15 | Tool specs + screenshots | 39 Playwright tests across six tools; 28 screenshots | Haiku 4.5 | ~25 min |
+| 16 | Docs + owner checklist | todo split into automated table + 10 owner boxes; README/AGENTS | Haiku 4.5 | ~15 min |
+| 17 | Release 1.0.0 | CHANGELOG, PR to `main`, tag `v1.0.0`, GitHub release with `dist` zip | Sonnet 5.5 + owner approvals | ~15 min agent, ~5 min owner |
 
-**Total:** about 5.75 hours of agent time. Subagent-driven execution adds a reviewer pass per task
+**Total:** about 7.25 hours of agent time (Tasks 1–12 are done; Tasks 13–17 add about 1.6 hours). Subagent-driven execution adds a reviewer pass per task
 (about 10 minutes each, Opus 5.5). Model choice: Opus 5.5 for tasks that define interfaces other
 tasks consume or parse untrusted structure (3, 4, 6, 9, 12); Sonnet 5.5 for tasks that follow an
 established pattern.
 
 **Goal:** Rebuild the Bun PDF Toolbox as a static Vite + React Router + WASM app with six
-client-side tools, installable and offline-capable, and release it as version 1.0.0.
+client-side tools, installable and offline-capable, covered by Playwright browser tests, and release it as version 1.0.0.
 
 **Architecture:** A static SPA. React Router 8 data router with one lazy route per tool, all driven
 by a registry in `src/tools.ts`. PDF work goes through `@mssio/qpdf-wasm` (qpdf in a Web Worker),
@@ -34,7 +38,7 @@ reached only via `src/lib/qpdf.ts`. Logic that can run without React lives in `s
 unit-tested in Node; pages are thin.
 
 **Tech Stack:** Node 24 LTS, Vite 8.3, React 19.3, React Router 8.4, TypeScript 6.0.3, Tailwind 4.3,
-shadcn (new-york) on Radix, `@mssio/qpdf-wasm` 1.0.0, `vite-plugin-pwa` 2.0, Vitest 5.0.
+shadcn (new-york) on Radix, `@mssio/qpdf-wasm` 1.0.0, `vite-plugin-pwa` 2.0, Vitest 5.0, Playwright 1.63 (Chromium + WebKit).
 
 **Spec:** `docs/superpowers/specs/2026-10-06-vite-wasm-port-design.md`
 
@@ -53,7 +57,9 @@ shadcn (new-york) on Radix, `@mssio/qpdf-wasm` 1.0.0, `vite-plugin-pwa` 2.0, Vit
 - Code style in `src/`: double quotes, semicolons, 2-space indent (matches the ported old app). Root config files (`vite.config.ts`, `eslint.config.js`, `pwa-assets.config.ts`) keep the scaffold's single quotes and no semicolons.
 - Import alias `@/` → `src/`. Imports from React Router use `react-router` (and `react-router/dom` for `RouterProvider`), never `react-router-dom`.
 - User-facing copy is exactly as written in the spec and this plan.
-- `docs/todo.md` lists the owner's manual checks per task. When a task completes, the controller changes that task's section heading from `(not ready yet)` to `(ready)`. Release (Task 13) is blocked until every box is ticked.
+- `docs/todo.md` lists the owner's manual checks. Until Task 16 rewrites it, the controller marks a finished task's section `(ready)`; after Task 16 it is an automated-checks table plus owner boxes. Release (Task 17) needs `npm run test:e2e` to pass and every owner box ticked.
+- E2E (Tasks 13–16): `@playwright/test` `^1.63.0`; tests run against the production build (`vite preview` on port 4173); `chromium` runs every spec, `webkit` only `e2e/offline.spec.ts`; service workers blocked except in the offline spec; no CI. E2E files follow the `src/` style (double quotes, semicolons); `playwright.config.ts` follows the root-config style (single quotes, no semicolons).
+- No `<input type="password">` anywhere: password fields use `SecretInput` (Task 14).
 - Commit after every task and push immediately (`git push`); the branch is `port-vite-wasm`. End every commit message with:
   ```
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
@@ -68,6 +74,8 @@ shadcn (new-york) on Radix, `@mssio/qpdf-wasm` 1.0.0, `vite-plugin-pwa` 2.0, Vit
 3. **Page ranges typed loosely**: spaces, uppercase `Z`, trailing comma, page `0`, double separators. Normalized or rejected client-side, never sent malformed to qpdf. Pinned in Task 2 (`normalizePageRanges` tests).
 4. **Reordering edge cases in Merge**: moving the first item up, the last down, the same file added twice, removing then re-adding. List order and identity stay correct. Pinned in Task 6 (`mergeListReducer` tests).
 5. **Unusual file names**: Unicode, no extension, uppercase `.PDF`, leading dot, Windows/Unix paths, whitespace-only. Output names stay sensible. Pinned in Task 2 (`outputFilename` tests).
+6. **A tool page's code fails to load** (flaky network before the service worker is installed, or a stale tab after a redeploy): the user sees the error screen with Reload, inside the normal header and footer, not a blank page. Pinned in Task 13 (`shell.spec.ts`, error-screen test; it is RED before the router fix).
+7. **Re-uploading a file the app just produced** (downloaded names have no `.pdf` until saved; the app must accept the real `.pdf` file and handle a second Compress pass). Pinned in Task 15 (`compress.spec.ts` second pass).
 
 ---
 
@@ -3999,7 +4007,1100 @@ git push
 
 ---
 
-### Task 13: Release 1.0.0
+### Task 13: Playwright setup, shell and offline tests (and the route error fix)
+
+**Files:**
+- Create: `playwright.config.ts`, `tsconfig.e2e.json`, `e2e/paths.ts`, `e2e/global-setup.ts`, `e2e/helpers.ts`, `e2e/shell.spec.ts`, `e2e/offline.spec.ts`
+- Modify: `package.json` (dev dependency + `test:e2e` script), `package-lock.json`, `tsconfig.json` (reference), `.gitignore`, `src/router.ts`
+
+**Interfaces:**
+- Consumes: the built app (`npm run build` → `dist/`), `makePdf` (`src/test/make-pdf.ts`), `parseQpdfJson` and `QPDF_JSON_ARGS` (`src/lib/pdf-info.ts`), `RouteError` (`src/components/RouteError.tsx`).
+- Produces (for Tasks 14–15):
+  - `fixture(name: string): string` and `FIXTURES_DIR` from `e2e/paths.ts`. Fixture names: `plain.pdf`, `two-pages.pdf` (A4), `protected.pdf` (password `open-me`), `restricted.pdf`, `linearized.pdf`, `not-a-pdf.pdf`, `empty.pdf`, `oversize.pdf` (260 MB sparse)
+  - From `e2e/helpers.ts`: `TOOL_PATHS: string[]`; `chooseFiles(page, ...names): Promise<void>`; `download(page, linkName): Promise<{ path: string; filename: string }>`; `inspectPdf(path, password?): Promise<{ encrypted: boolean; pageCount: number; capabilities: Record<string, boolean>; firstPageSize: string | null }>`; `tabTo(page, locator, maxTabs = 40): Promise<void>`
+  - Config: service workers are blocked by default; a spec that needs them calls `test.use({ serviceWorkers: "allow" })`. The `webkit` project runs only `offline.spec.ts`.
+
+- [ ] **Step 1: Install Playwright and its browsers**
+
+```bash
+npm install -D @playwright/test@^1.63.0
+npx playwright install chromium webkit
+```
+
+Expected: `npm ls @playwright/test` shows 1.63.x. Browsers go to `~/Library/Caches/ms-playwright` (outside the repo).
+
+- [ ] **Step 2: Script, ignores and type-checking**
+
+In `package.json` scripts add `"test:e2e": "npm run build && playwright test"`. Append to `.gitignore`:
+
+```
+# Playwright
+e2e/.fixtures/
+test-results/
+playwright-report/
+```
+
+`tsconfig.e2e.json`:
+
+```json
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.e2e.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "types": ["node"],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "paths": { "@/*": ["./src/*"] },
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["e2e", "playwright.config.ts"]
+}
+```
+
+Replace `tsconfig.json` with:
+
+```json
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.e2e.json" }
+  ]
+}
+```
+
+- [ ] **Step 3: Config, fixtures and helpers**
+
+`playwright.config.ts`:
+
+```ts
+import { defineConfig, devices } from '@playwright/test'
+
+// Runs against the production build (`npm run test:e2e` builds first). See spec section 9.
+export default defineConfig({
+  testDir: 'e2e',
+  globalSetup: './e2e/global-setup.ts',
+  tsconfig: './tsconfig.app.json',
+  timeout: 60_000,
+  reporter: [['list'], ['html', { open: 'never' }]],
+  webServer: {
+    command: 'npx vite preview --port 4173 --strictPort',
+    url: 'http://localhost:4173',
+    reuseExistingServer: false,
+  },
+  use: {
+    baseURL: 'http://localhost:4173',
+    // Service workers would serve cached chunks and bypass page.route(); only offline.spec.ts enables them.
+    serviceWorkers: 'block',
+  },
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] }, testMatch: /offline\.spec\.ts/ },
+  ],
+})
+```
+
+`e2e/paths.ts`:
+
+```ts
+import { fileURLToPath } from "node:url";
+
+export const FIXTURES_DIR = fileURLToPath(new URL("./.fixtures/", import.meta.url));
+
+export function fixture(name: string): string {
+  return `${FIXTURES_DIR}${name}`;
+}
+```
+
+`e2e/global-setup.ts`:
+
+```ts
+import { mkdir, truncate, writeFile } from "node:fs/promises";
+import { createQpdf } from "@mssio/qpdf-wasm";
+
+import { makePdf } from "../src/test/make-pdf";
+import { FIXTURES_DIR, fixture } from "./paths";
+
+/** Regenerates every test PDF before each run, so tests never depend on files outside the repo. */
+export default async function globalSetup() {
+  await mkdir(FIXTURES_DIR, { recursive: true });
+  const qpdf = await createQpdf();
+  try {
+    await writeFile(fixture("plain.pdf"), makePdf(5, { title: "Plain sample" }));
+    await writeFile(fixture("two-pages.pdf"), makePdf(2, { size: [595.28, 841.89] }));
+    await writeFile(
+      fixture("protected.pdf"),
+      (await qpdf.encrypt(makePdf(3), { userPassword: "open-me", ownerPassword: "owner" })).output,
+    );
+    await writeFile(
+      fixture("restricted.pdf"),
+      (await qpdf.encrypt(makePdf(2), { userPassword: "", ownerPassword: "owner", allow: { print: false } })).output,
+    );
+    await writeFile(fixture("linearized.pdf"), (await qpdf.linearize(makePdf(3))).output);
+    await writeFile(fixture("not-a-pdf.pdf"), "This is plain text, not a PDF.\n");
+    await writeFile(fixture("empty.pdf"), "");
+    await writeFile(fixture("oversize.pdf"), "");
+    await truncate(fixture("oversize.pdf"), 260 * 1024 * 1024); // sparse; only its size is ever checked
+  } finally {
+    qpdf.terminate();
+  }
+}
+```
+
+`e2e/helpers.ts`:
+
+```ts
+import { readFile } from "node:fs/promises";
+import { createQpdf, type Qpdf } from "@mssio/qpdf-wasm";
+import { expect, type Locator, type Page } from "@playwright/test";
+
+import { parseQpdfJson, QPDF_JSON_ARGS } from "@/lib/pdf-info";
+
+import { fixture } from "./paths";
+
+export const TOOL_PATHS = ["/decrypt", "/encrypt", "/merge", "/extract", "/compress", "/info"];
+
+/** Picks fixture files through the page's (visually hidden) file input. */
+export async function chooseFiles(page: Page, ...names: string[]): Promise<void> {
+  await page.locator('input[type="file"]').setInputFiles(names.map(fixture));
+}
+
+/** Clicks a download link and returns the saved file's path and suggested name. */
+export async function download(page: Page, linkName: string): Promise<{ path: string; filename: string }> {
+  const [file] = await Promise.all([page.waitForEvent("download"), page.getByRole("link", { name: linkName }).click()]);
+  return { path: await file.path(), filename: file.suggestedFilename() };
+}
+
+let qpdfInstance: Promise<Qpdf> | null = null;
+
+export type PdfInspection = {
+  encrypted: boolean;
+  pageCount: number;
+  capabilities: Record<string, boolean>;
+  firstPageSize: string | null;
+};
+
+/** Re-reads a PDF with the real qpdf in Node so tests verify what users actually download. */
+export async function inspectPdf(path: string, password?: string): Promise<PdfInspection> {
+  const qpdf = await (qpdfInstance ??= createQpdf());
+  const bytes = new Uint8Array(await readFile(path));
+  const passwordArgs = password ? [`--password=${password}`] : [];
+  const info = await qpdf.info(bytes.slice(), password ? { password } : {});
+  const json = await qpdf.run([...passwordArgs, ...QPDF_JSON_ARGS, "in.pdf"], { files: { "in.pdf": bytes.slice() } });
+  const parsed = JSON.parse(json.stdout);
+  return {
+    encrypted: info.encrypted,
+    pageCount: info.pageCount,
+    capabilities: parsed.encrypt?.capabilities ?? {},
+    firstPageSize: parseQpdfJson(parsed).firstPageSize?.name ?? null,
+  };
+}
+
+/** Presses Tab until `target` has focus; fails if it isn't reached within `maxTabs` presses. */
+export async function tabTo(page: Page, target: Locator, maxTabs = 40): Promise<void> {
+  for (let i = 0; i < maxTabs; i++) {
+    await page.keyboard.press("Tab");
+    if (await target.evaluate((element) => element === document.activeElement)) return;
+  }
+  await expect(target, `not reachable with ${maxTabs} Tab presses`).toBeFocused();
+}
+```
+
+- [ ] **Step 4: Write the shell and offline specs**
+
+`e2e/shell.spec.ts`:
+
+```ts
+import { expect, test } from "@playwright/test";
+
+import { TOOL_PATHS } from "./helpers";
+
+test("header, footer and home grid", async ({ page }) => {
+  await page.goto("/");
+  const header = page.locator("header");
+  await expect(header.getByRole("link", { name: "PDF Toolbox" })).toBeVisible();
+  await expect(header.locator('img[src="/favicon.svg"]')).toBeVisible();
+  await expect(header.getByRole("link", { name: "Home" })).toBeVisible();
+  await expect(header.getByRole("button", { name: /Switch to (dark|light) mode/ })).toBeVisible();
+  await expect(page.locator("footer")).toHaveText("PDFs are processed locally in your browser. Nothing is uploaded.");
+  await expect(page.getByRole("link", { name: "Open tool" })).toHaveCount(6);
+});
+
+test("theme toggle persists across reloads and is applied before the app script runs", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  // Block the app bundle: only the inline script in index.html can set the class now (no flash).
+  await page.route("**/assets/index-*.js", (route) => route.abort());
+  await page.reload();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+});
+
+test("follows the system theme when nothing is saved", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+});
+
+test("every tool URL loads directly", async ({ page }) => {
+  for (const path of TOOL_PATHS) {
+    await page.goto(path);
+    await expect(page.locator("main h1")).toBeVisible();
+  }
+});
+
+test("the home page downloads no wasm", async ({ page }) => {
+  const requests: string[] = [];
+  page.on("request", (request) => requests.push(request.url()));
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  expect(requests.filter((url) => url.endsWith(".wasm"))).toEqual([]);
+});
+
+test("nothing overflows sideways at 375 px", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  for (const path of ["/", ...TOOL_PATHS]) {
+    await page.goto(path);
+    await expect(page.locator("main h1")).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow, `${path} overflows by ${overflow}px`).toBeLessThanOrEqual(0);
+  }
+});
+
+test("a page that fails to load shows the error screen inside the shell", async ({ page }) => {
+  await page.route("**/assets/DecryptPage-*.js", (route) => route.abort());
+  await page.goto("/");
+  await page.getByRole("link", { name: "Open tool" }).first().click();
+  await expect(page.getByText("Something went wrong")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reload" })).toBeVisible();
+  await expect(page.locator("header").getByRole("link", { name: "PDF Toolbox" })).toBeVisible();
+  await page.getByRole("link", { name: "Back to home" }).click();
+  await expect(page).toHaveURL("/");
+});
+```
+
+`e2e/offline.spec.ts`:
+
+```ts
+import { spawn, type ChildProcess } from "node:child_process";
+import { createServer } from "node:net";
+import { expect, test, type Page } from "@playwright/test";
+
+import { chooseFiles, download } from "./helpers";
+
+// This spec needs the real service worker, so it opts back in (the config blocks it elsewhere).
+test.use({ serviceWorkers: "allow" });
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, () => {
+      const address = server.address();
+      server.close(() => (typeof address === "object" && address ? resolve(address.port) : reject(new Error("no port"))));
+    });
+  });
+}
+
+async function startPreview(port: number): Promise<ChildProcess> {
+  const child = spawn("npx", ["vite", "preview", "--port", String(port), "--strictPort"], {
+    stdio: "ignore",
+    detached: true,
+  });
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try {
+      await fetch(`http://localhost:${port}/`);
+      return child;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  throw new Error(`vite preview did not start on port ${port}`);
+}
+
+async function stopPreview(child: ChildProcess, port: number): Promise<void> {
+  if (child.pid) process.kill(-child.pid);
+  for (let attempt = 0; attempt < 50; attempt++) {
+    try {
+      await fetch(`http://localhost:${port}/`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    } catch {
+      return; // the server is gone: from now on only the service worker can answer
+    }
+  }
+  throw new Error("vite preview did not stop");
+}
+
+async function decryptProtected(page: Page): Promise<string> {
+  await chooseFiles(page, "protected.pdf");
+  await page.getByLabel("Password", { exact: true }).fill("open-me");
+  await page.getByRole("button", { name: "Decrypt", exact: true }).click();
+  return (await download(page, "Download decrypted PDF")).filename;
+}
+
+test("after the first visit the app works with the server gone", async ({ page }) => {
+  const port = await freePort();
+  const origin = `http://localhost:${port}`;
+  const server = await startPreview(port);
+  try {
+    await page.goto(`${origin}/decrypt`);
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.waitForFunction(async () => {
+      for (const name of await caches.keys()) {
+        const requests = await (await caches.open(name)).keys();
+        if (requests.some((request) => /qpdf-.*\.wasm$/.test(request.url))) return true;
+      }
+      return false;
+    });
+    await page.reload(); // the active worker now controls the page
+  } finally {
+    await stopPreview(server, port);
+  }
+
+  await page.goto(`${origin}/info`);
+  await expect(page.getByRole("heading", { name: "PDF info" })).toBeVisible();
+  await page.goto(`${origin}/decrypt`);
+  await expect(page.getByRole("heading", { name: "Decrypt PDF" })).toBeVisible();
+  expect(await decryptProtected(page)).toBe("protected-d.pdf");
+});
+```
+
+- [ ] **Step 5: Run them: the error-screen test must fail (RED)**
+
+```bash
+npx playwright test
+```
+
+Expected: every test passes **except** `a page that fails to load shows the error screen inside the shell`: the main area stays empty. React Router does not use a lazy route's own `ErrorBoundary` when the lazy import itself fails, so the error screen added in the final review never appears.
+
+- [ ] **Step 6: Move the error boundary to a pathless route inside AppShell**
+
+`src/router.ts`:
+
+```ts
+import { createBrowserRouter } from "react-router";
+
+import { AppShell } from "@/components/AppShell";
+import { RouteError } from "@/components/RouteError";
+import { HomePage } from "@/pages/HomePage";
+import { tools } from "@/tools";
+
+// The error boundary lives on a pathless route inside AppShell: it catches failures from every page,
+// including a lazy page whose code fails to load, while the shell's header and footer stay visible.
+export const router = createBrowserRouter([
+  {
+    Component: AppShell,
+    children: [
+      {
+        ErrorBoundary: RouteError,
+        children: [{ path: "/", Component: HomePage }, ...tools.map((tool) => ({ path: tool.path, lazy: tool.load }))],
+      },
+    ],
+  },
+]);
+```
+
+- [ ] **Step 7: Run everything (GREEN)**
+
+```bash
+npm run lint && npm test && npm run test:e2e
+```
+
+Expected: lint clean; unit/integration 119 passed; Playwright: 7 shell tests (chromium) + the offline test in chromium **and** webkit pass. Run `npx playwright test` a second time to confirm nothing is flaky.
+
+- [ ] **Step 8: Commit and push**
+
+```bash
+git add package.json package-lock.json tsconfig.json tsconfig.e2e.json .gitignore playwright.config.ts e2e src/router.ts
+git commit -m "test: Playwright setup with shell and offline tests; fix route error screen for lazy pages
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NvYC5VwsQMEVA9j9Scdfc1"
+git push
+```
+
+---
+
+### Task 14: Password fields that are never saved
+
+**Files:**
+- Create: `src/components/ui/secret-input.tsx`, `e2e/password-fields.spec.ts`
+- Modify: `src/pages/DecryptPage.tsx`, `src/pages/EncryptPage.tsx`
+
+**Interfaces:**
+- Consumes: `Input` (`@/components/ui/input`), `cn`; `TOOL_PATHS` from `e2e/helpers.ts` (Task 13).
+- Produces: `SecretInput(props: Omit<React.ComponentProps<"input">, "type">)` from `@/components/ui/secret-input`. It always renders `type="text"`, masks with `-webkit-text-security: disc`, and forces `autoComplete="off"` plus the password-manager opt-out attributes (callers cannot override them).
+
+- [ ] **Step 1: Write the failing spec**
+
+`e2e/password-fields.spec.ts`:
+
+```ts
+import { expect, test } from "@playwright/test";
+
+import { TOOL_PATHS } from "./helpers";
+
+const IGNORE_ATTRIBUTES = {
+  autocomplete: "off",
+  "data-1p-ignore": "true",
+  "data-lpignore": "true",
+  "data-bwignore": "true",
+  "data-form-type": "other",
+};
+
+test("no page has a real password input", async ({ page }) => {
+  for (const path of ["/", ...TOOL_PATHS]) {
+    await page.goto(path);
+    await expect(page.locator("main h1")).toBeVisible();
+    await expect(page.locator('input[type="password"]'), path).toHaveCount(0);
+  }
+});
+
+for (const { path, labels } of [
+  { path: "/decrypt", labels: ["Password"] },
+  { path: "/encrypt", labels: ["Password to open", "Confirm password"] },
+]) {
+  test(`${path} password fields are masked and opt out of password managers`, async ({ page }) => {
+    await page.goto(path);
+    for (const label of labels) {
+      const field = page.getByLabel(label, { exact: true });
+      await expect(field).toHaveAttribute("type", "text");
+      for (const [name, value] of Object.entries(IGNORE_ATTRIBUTES)) {
+        await expect(field, `${label} ${name}`).toHaveAttribute(name, value);
+      }
+      const masking = await field.evaluate((element) => getComputedStyle(element).getPropertyValue("-webkit-text-security"));
+      expect(masking).toBe("disc");
+      await field.fill("secret");
+      await expect(field).toHaveValue("secret");
+    }
+  });
+}
+```
+
+- [ ] **Step 2: Run it (RED)**
+
+```bash
+npm run build && npx playwright test e2e/password-fields.spec.ts
+```
+
+Expected: 3 failures: `toHaveCount(0)` receives 1 on `/decrypt`, and `type` is `"password"` instead of `"text"`.
+
+- [ ] **Step 3: The component**
+
+`src/components/ui/secret-input.tsx`:
+
+```tsx
+import * as React from "react";
+
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+
+/**
+ * A password field that browsers and password managers don't offer to save: a masked text input
+ * (browsers ignore autocomplete="off" on type="password") plus the managers' opt-out attributes.
+ */
+function SecretInput({ className, ...props }: Omit<React.ComponentProps<"input">, "type">) {
+  return (
+    <Input
+      {...props}
+      type="text"
+      autoComplete="off"
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
+      data-1p-ignore="true"
+      data-lpignore="true"
+      data-bwignore="true"
+      data-form-type="other"
+      className={cn("[-webkit-text-security:disc]", className)}
+    />
+  );
+}
+
+export { SecretInput };
+```
+
+- [ ] **Step 4: Use it in Decrypt and Encrypt**
+
+In `src/pages/DecryptPage.tsx` and `src/pages/EncryptPage.tsx`:
+- remove `import { Input } from "@/components/ui/input";` and add `import { SecretInput } from "@/components/ui/secret-input";` after the `Label` import;
+- replace each password `<Input` with `<SecretInput` and delete its `type="password"` and `autoComplete=…` lines (one field in Decrypt: `id="password"`; two in Encrypt: `id="password"` and `id="confirm"`). All other props stay. Example, Decrypt after the change:
+
+```tsx
+            <SecretInput
+              id="password"
+              disabled={job.busy}
+              placeholder="Document open password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              aria-describedby="password-help"
+            />
+```
+
+`grep -n "Input" src/pages/DecryptPage.tsx src/pages/EncryptPage.tsx` must show only `SecretInput` (plus `Label`).
+
+- [ ] **Step 5: Run (GREEN)**
+
+```bash
+npm run lint && npm test && npm run test:e2e
+```
+
+Expected: everything passes, including the 3 password-field tests.
+
+- [ ] **Step 6: Commit and push**
+
+```bash
+git add src/components/ui/secret-input.tsx src/pages/DecryptPage.tsx src/pages/EncryptPage.tsx e2e/password-fields.spec.ts
+git commit -m "feat: password fields browsers and password managers don't offer to save
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NvYC5VwsQMEVA9j9Scdfc1"
+git push
+```
+
+---
+
+### Task 15: Tool specs and screenshots
+
+**Files:**
+- Create: `e2e/decrypt.spec.ts`, `e2e/encrypt.spec.ts`, `e2e/merge.spec.ts`, `e2e/extract.spec.ts`, `e2e/compress.spec.ts`, `e2e/info.spec.ts`, `e2e/screenshots.spec.ts`
+
+**Interfaces:**
+- Consumes: `chooseFiles`, `download`, `inspectPdf`, `tabTo`, `TOOL_PATHS` (Task 13); fixture names (Task 13); the exact UI copy from the spec. No app code changes in this task: if a test fails, the app or the spec is wrong — report it, don't loosen the test.
+- Produces: the automated coverage listed in `docs/todo.md` (Task 16) and `test-results/screenshots/<page>-<theme>-<width>.png` (28 files).
+
+- [ ] **Step 1: Decrypt and Encrypt**
+
+`e2e/decrypt.spec.ts`:
+
+```ts
+import { expect, test } from "@playwright/test";
+
+import { chooseFiles, download, inspectPdf } from "./helpers";
+
+test.beforeEach(async ({ page }) => {
+  await page.goto("/decrypt");
+});
+
+test("wrong password, then the right one, decrypts the same file", async ({ page }) => {
+  await chooseFiles(page, "protected.pdf");
+  await page.getByLabel("Password", { exact: true }).fill("wrong");
+  await page.getByRole("button", { name: "Decrypt", exact: true }).click();
+  await expect(page.getByText("Incorrect password. Check it and try again.")).toBeVisible();
+
+  await page.getByLabel("Password", { exact: true }).fill("open-me");
+  await page.getByRole("button", { name: "Decrypt", exact: true }).click();
+  await expect(page.getByText("Your PDF is ready")).toBeVisible();
+  const file = await download(page, "Download decrypted PDF");
+  expect(file.filename).toBe("protected-d.pdf");
+  expect(await inspectPdf(file.path)).toMatchObject({ encrypted: false, pageCount: 3 });
+});
+
+test("an empty password removes owner restrictions", async ({ page }) => {
+  await chooseFiles(page, "restricted.pdf");
+  await page.getByRole("button", { name: "Decrypt", exact: true }).click();
+  const file = await download(page, "Download decrypted PDF");
+  expect(await inspectPdf(file.path)).toMatchObject({ encrypted: false });
+});
+
+test("non-PDF files are refused", async ({ page }) => {
+  await page.locator('input[type="file"]').setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hi") });
+  await expect(page.getByText("File must be a PDF.")).toBeVisible();
+});
+
+test("decrypt another file and back to home", async ({ page }) => {
+  await chooseFiles(page, "restricted.pdf");
+  await page.getByRole("button", { name: "Decrypt", exact: true }).click();
+  await page.getByRole("button", { name: "Decrypt another file" }).click();
+  await expect(page.getByText("Drag and drop a PDF here")).toBeVisible();
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue("");
+  await chooseFiles(page, "restricted.pdf");
+  await page.getByRole("button", { name: "Decrypt", exact: true }).click();
+  await page.getByRole("link", { name: "Back to home" }).click();
+  await expect(page).toHaveURL("/");
+});
+
+test("the wasm loads only when a job runs", async ({ page }) => {
+  const wasm: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith(".wasm")) wasm.push(request.url());
+  });
+  await page.reload();
+  await page.waitForLoadState("networkidle");
+  expect(wasm).toHaveLength(0);
+  await chooseFiles(page, "restricted.pdf");
+  await page.getByRole("button", { name: "Decrypt", exact: true }).click();
+  await expect(page.getByText("Your PDF is ready")).toBeVisible();
+  expect(wasm).toHaveLength(1);
+});
+
+test("files over 250 MB are refused before any work", async ({ page }) => {
+  await chooseFiles(page, "oversize.pdf");
+  await expect(page.getByText(/Files must be 250 MB or less in total \(you selected 260 MB\)\./)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Decrypt", exact: true })).toBeDisabled();
+});
+```
+
+`e2e/encrypt.spec.ts`:
+
+```ts
+import { expect, test } from "@playwright/test";
+
+import { chooseFiles, download, inspectPdf } from "./helpers";
+
+test.beforeEach(async ({ page }) => {
+  await page.goto("/encrypt");
+});
+
+async function fillPasswords(page: import("@playwright/test").Page, password: string, confirm: string) {
+  await page.getByLabel("Password to open", { exact: true }).fill(password);
+  await page.getByLabel("Confirm password", { exact: true }).fill(confirm);
+}
+
+test("password validation", async ({ page }) => {
+  await chooseFiles(page, "plain.pdf");
+  await page.getByRole("button", { name: "Encrypt", exact: true }).click();
+  await expect(page.getByText("Password is required.")).toBeVisible();
+  await fillPasswords(page, "a", "b");
+  await page.getByRole("button", { name: "Encrypt", exact: true }).click();
+  await expect(page.getByText("Passwords don't match.")).toBeVisible();
+});
+
+test("protects with the password and the chosen permissions", async ({ page }) => {
+  await chooseFiles(page, "plain.pdf");
+  await fillPasswords(page, "secret", "secret");
+  await page.getByLabel("Allow printing").click();
+  await page.getByRole("button", { name: "Encrypt", exact: true }).click();
+  await expect(page.getByText("Your PDF is protected")).toBeVisible();
+  const file = await download(page, "Download protected PDF");
+  expect(file.filename).toBe("plain-protected.pdf");
+  await expect(inspectPdf(file.path)).rejects.toMatchObject({ code: "INVALID_PASSWORD" });
+  const inspection = await inspectPdf(file.path, "secret");
+  expect(inspection).toMatchObject({ encrypted: true, pageCount: 5 });
+  expect(inspection.capabilities).toMatchObject({ printhigh: false, extract: true, modifyother: true });
+});
+
+test("password-protected input is sent to Decrypt", async ({ page }) => {
+  await chooseFiles(page, "protected.pdf");
+  await fillPasswords(page, "x", "x");
+  await page.getByRole("button", { name: "Encrypt", exact: true }).click();
+  await expect(page.getByText("This PDF is password-protected. Remove its password with Decrypt first.")).toBeVisible();
+  await page.getByRole("link", { name: "Go to Decrypt" }).click();
+  await expect(page).toHaveURL("/decrypt");
+});
+
+test("restriction-only input is accepted", async ({ page }) => {
+  await chooseFiles(page, "restricted.pdf");
+  await fillPasswords(page, "x", "x");
+  await page.getByRole("button", { name: "Encrypt", exact: true }).click();
+  await expect(page.getByText("Your PDF is protected")).toBeVisible();
+});
+```
+
+- [ ] **Step 2: Merge and Extract**
+
+`e2e/merge.spec.ts`:
+
+```ts
+import { expect, test } from "@playwright/test";
+
+import { chooseFiles, download, inspectPdf, tabTo } from "./helpers";
+
+test.beforeEach(async ({ page }) => {
+  await page.goto("/merge");
+});
+
+const rows = (page: import("@playwright/test").Page) => page.locator("ol > li");
+
+test("files append, reorder and remove; merge keeps the chosen order", async ({ page }) => {
+  await chooseFiles(page, "plain.pdf");
+  await expect(page.getByRole("button", { name: "Merge", exact: true })).toBeDisabled();
+  await chooseFiles(page, "two-pages.pdf");
+  await expect(rows(page)).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Move plain.pdf up" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Move two-pages.pdf down" })).toBeDisabled();
+
+  await page.getByRole("button", { name: "Move two-pages.pdf up" }).click();
+  await expect(rows(page).first()).toContainText("two-pages.pdf");
+  await page.getByRole("button", { name: "Merge", exact: true }).click();
+  await expect(page.getByText("2 files, 7 pages.")).toBeVisible();
+  const file = await download(page, "Download merged PDF");
+  expect(file.filename).toBe("merged.pdf");
+  expect(await inspectPdf(file.path)).toMatchObject({ pageCount: 7, encrypted: false, firstPageSize: "A4" });
+});
+
+test("restricted inputs get a note that restrictions are dropped", async ({ page }) => {
+  await chooseFiles(page, "plain.pdf", "restricted.pdf");
+  await page.getByRole("button", { name: "Merge", exact: true }).click();
+  await expect(page.getByText("Restrictions from the original files aren't kept in the merged PDF.")).toBeVisible();
+});
+
+test("problem files are named, and the error clears when the file is removed", async ({ page }) => {
+  await chooseFiles(page, "plain.pdf", "protected.pdf");
+  await page.getByRole("button", { name: "Merge", exact: true }).click();
+  await expect(page.getByText("“protected.pdf” is password-protected. Remove its password with Decrypt first.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Go to Decrypt" })).toBeVisible();
+  await page.getByRole("button", { name: "Remove protected.pdf" }).click();
+  await expect(page.getByText(/is password-protected/)).toHaveCount(0);
+
+  await chooseFiles(page, "not-a-pdf.pdf");
+  await page.getByRole("button", { name: "Merge", exact: true }).click();
+  await expect(page.getByText("“not-a-pdf.pdf” isn't a readable PDF.")).toBeVisible();
+  await page.getByRole("button", { name: "Remove not-a-pdf.pdf" }).click();
+
+  await chooseFiles(page, "empty.pdf");
+  await page.getByRole("button", { name: "Merge", exact: true }).click();
+  await expect(page.getByText("“empty.pdf” is empty.")).toBeVisible();
+});
+
+test("keyboard: Tab reaches the drop zone and every row button", async ({ page }) => {
+  const zone = page.locator('div[role="button"]', { hasText: "Drag and drop PDFs here" });
+  await tabTo(page, zone);
+  const chooser = page.waitForEvent("filechooser");
+  await page.keyboard.press("Enter");
+  await (await chooser).setFiles([]);
+  await chooseFiles(page, "plain.pdf", "two-pages.pdf");
+  for (const name of ["Move plain.pdf down", "Remove plain.pdf", "Move two-pages.pdf up", "Remove two-pages.pdf"]) {
+    await tabTo(page, page.getByRole("button", { name }));
+  }
+});
+```
+
+`e2e/extract.spec.ts`:
+
+```ts
+import { expect, test } from "@playwright/test";
+
+import { chooseFiles, download, inspectPdf } from "./helpers";
+
+test.beforeEach(async ({ page }) => {
+  await page.goto("/extract");
+});
+
+test("shows the page count and extracts loosely typed ranges", async ({ page }) => {
+  const extract = page.getByRole("button", { name: "Extract", exact: true });
+  await expect(extract).toBeDisabled();
+  await chooseFiles(page, "plain.pdf");
+  await expect(page.getByText("This PDF has 5 pages.")).toBeVisible();
+  await page.getByLabel("Pages").fill(" 1 - 2 , Z ");
+  await extract.click();
+  await expect(page.getByText("Extracted 3 pages in your browser.")).toBeVisible();
+  const file = await download(page, "Download extracted pages");
+  expect(file.filename).toBe("plain-pages.pdf");
+  expect(await inspectPdf(file.path)).toMatchObject({ pageCount: 3 });
+});
+
+test("invalid and out-of-range pages", async ({ page }) => {
+  await chooseFiles(page, "plain.pdf");
+  await expect(page.getByText("This PDF has 5 pages.")).toBeVisible();
+  await page.getByLabel("Pages").fill("abc");
+  await page.getByRole("button", { name: "Extract", exact: true }).click();
+  await expect(page.getByText("Enter pages like 1-3,7 or 5-z.")).toBeVisible();
+  await page.getByLabel("Pages").fill("9");
+  await page.getByRole("button", { name: "Extract", exact: true }).click();
+  await expect(page.getByText("Could not process this PDF.")).toBeVisible();
+  await expect(page.getByText(/out of range/)).toBeVisible();
+});
+
+test("password-protected input is sent to Decrypt and Extract stays disabled", async ({ page }) => {
+  await chooseFiles(page, "protected.pdf");
+  await expect(page.getByText("This PDF is password-protected. Remove its password with Decrypt first.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Go to Decrypt" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Extract", exact: true })).toBeDisabled();
+});
+```
+
+- [ ] **Step 3: Compress and Info**
+
+`e2e/compress.spec.ts`:
+
+```ts
+import { readFile } from "node:fs/promises";
+import { expect, test } from "@playwright/test";
+
+import { chooseFiles, download } from "./helpers";
+
+test("compresses, and a second pass reports no smaller version", async ({ page }) => {
+  await page.goto("/compress");
+  await chooseFiles(page, "plain.pdf");
+  await page.getByRole("button", { name: "Compress", exact: true }).click();
+  await expect(page.getByText("Your PDF is smaller")).toBeVisible();
+  await expect(page.getByText(/ → .*(−\d+%|less than 1% smaller)/)).toBeVisible();
+  const file = await download(page, "Download compressed PDF");
+  expect(file.filename).toBe("plain-compressed.pdf");
+
+  await page.getByRole("button", { name: "Compress another file" }).click();
+  // Playwright saves downloads under a random name, so re-upload under the real one.
+  await page
+    .locator('input[type="file"]')
+    .setInputFiles({ name: file.filename, mimeType: "application/pdf", buffer: await readFile(file.path) });
+  await page.getByRole("button", { name: "Compress", exact: true }).click();
+  await expect(page.getByText("No smaller version")).toBeVisible();
+  await expect(page.getByText(/already as small as qpdf can make it/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Download compressed PDF" })).toHaveCount(0);
+});
+
+test("password-protected input is sent to Decrypt", async ({ page }) => {
+  await page.goto("/compress");
+  await chooseFiles(page, "protected.pdf");
+  await page.getByRole("button", { name: "Compress", exact: true }).click();
+  await expect(page.getByText("This PDF is password-protected. Remove its password with Decrypt first.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Go to Decrypt" })).toBeVisible();
+});
+```
+
+`e2e/info.spec.ts`:
+
+```ts
+import { expect, test, type Page } from "@playwright/test";
+
+import { chooseFiles } from "./helpers";
+
+async function inspect(page: Page, name: string) {
+  await page.goto("/info");
+  await chooseFiles(page, name);
+  await page.getByRole("button", { name: "Inspect", exact: true }).click();
+}
+
+const row = (page: Page, label: string) => page.locator("dl > div").filter({ has: page.locator("dt", { hasText: label }) }).locator("dd");
+
+test("plain PDF details", async ({ page }) => {
+  await inspect(page, "plain.pdf");
+  await expect(page.getByText("Plain sample").first()).toBeVisible();
+  await expect(row(page, "Author")).toHaveText("Test Author");
+  await expect(row(page, "Created")).not.toBeEmpty();
+  await expect(row(page, "Pages")).toHaveText("5");
+  await expect(row(page, "PDF version")).toHaveText("1.7");
+  await expect(row(page, "Page size")).toContainText("Letter");
+  await expect(row(page, "Encryption")).toHaveText("Not encrypted");
+  await expect(row(page, "Fast web view")).toHaveText("No");
+  await expect(row(page, "Attachments")).toHaveText("None");
+  await page.getByRole("button", { name: "Inspect another file" }).click();
+  await expect(page.getByText("Drag and drop a PDF here")).toBeVisible();
+});
+
+test("restriction-only PDF shows its restrictions", async ({ page }) => {
+  await inspect(page, "restricted.pdf");
+  await expect(row(page, "Encryption")).toContainText("Restrictions only (opens without a password)");
+  await expect(row(page, "Encryption")).toContainText("AES-256");
+  await expect(row(page, "Not allowed")).toContainText("Printing");
+});
+
+test("linearized PDF shows the badge", async ({ page }) => {
+  await inspect(page, "linearized.pdf");
+  await expect(row(page, "Fast web view")).toHaveText("Linearized");
+});
+
+test("password-protected input is sent to Decrypt", async ({ page }) => {
+  await inspect(page, "protected.pdf");
+  await expect(page.getByText("This PDF is password-protected. Remove its password with Decrypt first.")).toBeVisible();
+});
+```
+
+- [ ] **Step 4: Screenshots**
+
+`e2e/screenshots.spec.ts`:
+
+```ts
+import { expect, test } from "@playwright/test";
+
+import { TOOL_PATHS } from "./helpers";
+
+// Saves screenshots for the owner's visual review (docs/todo.md); asserts only that pages render.
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [375, 1280]) {
+    test(`screenshots ${theme} ${width}px`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: theme });
+      await page.setViewportSize({ width, height: width === 375 ? 812 : 800 });
+      for (const path of ["/", ...TOOL_PATHS]) {
+        await page.goto(path);
+        await expect(page.locator("main h1")).toBeVisible();
+        const name = path === "/" ? "home" : path.slice(1);
+        await page.screenshot({ path: `test-results/screenshots/${name}-${theme}-${width}.png`, fullPage: true });
+      }
+    });
+  }
+}
+```
+
+- [ ] **Step 5: Run the whole suite twice**
+
+```bash
+npm run lint && npm test && npm run test:e2e && npx playwright test
+```
+
+Expected: both Playwright runs report **39 passed** (38 chromium + 1 webkit) with no flaky retries; `ls test-results/screenshots | wc -l` → 28. Open two screenshots (e.g. `home-dark-375.png`, `merge-light-1280.png`) and confirm they show the real page.
+
+- [ ] **Step 6: Commit and push**
+
+```bash
+git add e2e
+git commit -m "test: Playwright specs for every tool, plus screenshots for visual review
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NvYC5VwsQMEVA9j9Scdfc1"
+git push
+```
+
+---
+
+### Task 16: Docs and the owner checklist
+
+**Files:**
+- Modify: `docs/todo.md` (full rewrite), `README.md`, `AGENTS.md`
+
+**Interfaces:**
+- Consumes: spec file names and the test titles from Tasks 13–15.
+- Produces: the release gate used by Task 17: `npm run test:e2e` passes **and** every owner box in `docs/todo.md` is ticked.
+
+- [ ] **Step 1: Rewrite `docs/todo.md`**
+
+Replace the whole file with (all boxes unticked; the owner ticks them):
+
+````markdown
+# Release checks for 1.0.0
+
+Release 1.0.0 (plan Task 17) starts only when **both** are true:
+
+1. `npm run test:e2e` passes (all automated checks below).
+2. Every owner box at the bottom is ticked (`- [x]`).
+
+## Setup
+
+```bash
+cd pdf-mss-io
+nvm use                                  # Node 24
+npm install
+npx playwright install chromium webkit   # once, ~300 MB, outside the repo
+npm run test:e2e                         # builds, then runs every browser check
+```
+
+After a run, the test PDFs are in `e2e/.fixtures/`: `plain.pdf` (5 pages, title "Plain sample"),
+`protected.pdf` (password `open-me`), `restricted.pdf` (opens without a password, printing disabled),
+and the screenshots are in `test-results/screenshots/`.
+
+## Automated checks (Playwright)
+
+Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
+
+| Check | Spec file |
+|---|---|
+| Header logo + "PDF Toolbox", Home link, theme toggle, footer text, six tool cards | `e2e/shell.spec.ts` |
+| Theme toggle survives a reload with no flash; follows the system theme when nothing is saved | `e2e/shell.spec.ts` |
+| Every tool URL loads directly | `e2e/shell.spec.ts` |
+| Home page loads no `.wasm` | `e2e/shell.spec.ts` |
+| Nothing overflows sideways at 375 px (home and every tool) | `e2e/shell.spec.ts` |
+| A page whose code fails to load shows "Something went wrong" inside the header and footer | `e2e/shell.spec.ts` |
+| Decrypt: wrong → right password on the same file, `protected-d.pdf` opens without a password, empty password removes restrictions, non-PDF refused, "Decrypt another file" / "Back to home", wasm loads on the first job only, over 250 MB refused | `e2e/decrypt.spec.ts` |
+| Encrypt: password validation, `plain-protected.pdf` needs the password and denies printing, password-protected input → Decrypt link, restriction-only input accepted | `e2e/encrypt.spec.ts` |
+| Merge: append, reorder, remove, disabled first-up/last-down, order kept in `merged.pdf`, restrictions note, protected/unreadable/empty files named, error clears on remove, keyboard path | `e2e/merge.spec.ts` |
+| Extract: page count, loose ranges → `plain-pages.pdf` with 3 pages, invalid and out-of-range messages, protected input → Decrypt link | `e2e/extract.spec.ts` |
+| Compress: smaller result with sizes, second pass → "No smaller version" without a download, protected input → Decrypt link | `e2e/compress.spec.ts` |
+| Info: plain PDF details, restriction badges, Linearized badge, protected input → Decrypt link | `e2e/info.spec.ts` |
+| No `type="password"` input anywhere; password fields masked and carry the password-manager opt-outs | `e2e/password-fields.spec.ts` |
+| Offline: service worker active and wasm cached, then with the server stopped `/info` and `/decrypt` load and decrypting works (Chromium and WebKit) | `e2e/offline.spec.ts` |
+
+## Owner checks
+
+Only a person can check these. Tick each box after checking it.
+
+- [ ] Screenshots in `test-results/screenshots/` (light and dark, 375 px and 1280 px) look right and match the old app's style.
+- [ ] The favicon (dark tile, white document, open padlock) shows in a real browser tab, in light and dark browser themes.
+- [ ] Encrypt `plain.pdf` with password `secret` and printing unticked: your PDF viewer asks for `secret` and blocks printing.
+- [ ] Type a password in Decrypt and in Encrypt and submit: neither the browser nor your password manager offers to save it.
+- [ ] Open every tool once in your everyday browser (if it isn't Chrome): it works the same.
+
+Phone (deploy `dist/` somewhere with HTTPS; `npm run preview -- --host` on the same Wi-Fi works for the non-offline checks):
+
+- [ ] Add to Home Screen → opens full-screen with the padlock icon.
+- [ ] Encrypt a ~100 MB PDF: works, or the memory message appears (if it fails, tell Claude to lower the limits).
+- [ ] Encrypt a ~250 MB PDF: works, or the memory message appears (same).
+- [ ] Airplane mode → open from the home screen → Decrypt works.
+- [ ] Every box above is ticked.
+````
+
+- [ ] **Step 2: README**
+
+In `README.md`:
+- In the `## Scripts` code block, after the `npm test` line add:
+  ```
+  npm run test:e2e  # browser tests with Playwright (builds first)
+  ```
+  and after the block add: "Before the first `npm run test:e2e`, install the browsers once: `npx playwright install chromium webkit` (~300 MB, outside the repo)."
+- In `## Stack`, add "Playwright (E2E)" after "Vitest 5".
+- Replace the `## Release checks` paragraph with: "Release 1.0.0 needs `npm run test:e2e` to pass and every owner box in [docs/todo.md](docs/todo.md) ticked."
+
+- [ ] **Step 3: AGENTS.md**
+
+In `AGENTS.md`:
+- In `## Map`, add these lines in place (keep alignment):
+  ```
+  src/components/RouteError.tsx  error screen; mounted on a pathless route inside AppShell (src/router.ts)
+  src/components/ui/secret-input.tsx  password field browsers/password managers don't save
+  e2e/                      Playwright specs (one per tool + shell, offline, password fields, screenshots)
+  playwright.config.ts      E2E config: vite preview :4173, chromium all specs, webkit offline spec only
+  ```
+- In `## UI conventions`, add a bullet: "Password fields use `SecretInput`, never `<input type=\"password\">` (browsers ignore `autocomplete=\"off\"` and offer to save). Trade-off: screen readers may read the typed characters."
+- Add a new section before `## Versions`:
+  ```
+  ## E2E tests
+
+  - `npm run test:e2e` builds, starts `vite preview` on :4173 and runs `e2e/` with Playwright. Install
+    browsers once with `npx playwright install chromium webkit`.
+  - Fixtures are generated fresh by `e2e/global-setup.ts` into `e2e/.fixtures/` (git-ignored).
+    Downloads are verified with `inspectPdf()` (real qpdf in Node), not just by file name.
+  - Service workers are blocked by default (they would bypass `page.route()`); `offline.spec.ts`
+    re-enables them, starts its own preview server on a free port, waits for the cached wasm, then
+    stops the server. `context.setOffline()` breaks navigation in WebKit, so don't use it.
+  - The error boundary must stay on the pathless route in `src/router.ts`: React Router ignores a lazy
+    route's own `ErrorBoundary` when its import fails (pinned by `shell.spec.ts`).
+  - New tool → new `e2e/<tool>.spec.ts` covering its messages and verifying its downloads.
+  ```
+- In `## Before you finish`, change the command block to `npm run lint && npm test && npm run build`
+  followed by a new line `npm run test:e2e   # for any UI or behavior change`, and change the
+  paragraph after it to: "Checks only a person can do are the owner boxes in `docs/todo.md`; only the
+  owner ticks them. Never start a release unless `npm run test:e2e` passes and every box is ticked."
+
+- [ ] **Step 4: Verify**
+
+```bash
+npm run lint && npm test && npm run test:e2e
+grep -c -- '- \[ \]' docs/todo.md   # 10
+grep -o '](\S*)' README.md AGENTS.md
+```
+
+Expected: all green; 10 unticked owner boxes; every relative link points at an existing file (`CHANGELOG.md` is created in Task 17).
+
+- [ ] **Step 5: Commit and push**
+
+```bash
+git add docs/todo.md README.md AGENTS.md
+git commit -m "docs: E2E tests, password fields and the slimmer owner checklist
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NvYC5VwsQMEVA9j9Scdfc1"
+git push
+```
+
+---
+
+### Task 17: Release 1.0.0
 
 **Files:**
 - Create: `CHANGELOG.md`
@@ -4012,13 +5113,14 @@ Steps 2–4 publish or change `main`. **Ask the owner before each one** and wait
 
 - [ ] **Step 0: Owner checks gate**
 
-`docs/todo.md` holds the owner's manual checks. The release does not start while any box is unticked:
+The release starts only when the automated checks pass **and** every owner box in `docs/todo.md` is ticked:
 
 ```bash
+npm run test:e2e
 grep -n -- '- \[ \]' docs/todo.md && echo "STOP: unticked owner checks" || echo "all owner checks ticked"
 ```
 
-Expected: `all owner checks ticked`. Otherwise stop and list the unticked lines for the owner.
+Expected: Playwright all green, then `all owner checks ticked`. Otherwise stop and report the failures or the unticked lines to the owner.
 
 - [ ] **Step 1: Changelog**
 
