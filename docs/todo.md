@@ -1,106 +1,98 @@
-# Owner checks before 1.0.0
+# Release checks for 1.0.0
 
-Manual checks only a person can do (in a real browser or on a phone). Tick each box (`- [x]`) after
-checking it. **Release 1.0.0 (plan Task 13) does not start while any box here is unticked.**
+Release 1.0.0 (plan Task 17) starts only when **both** are true:
 
-Each section becomes checkable once its task is done; the status line says which ones are ready.
+1. `npm run test:e2e` passes (all automated checks below).
+2. Every owner box below is ticked (`- [x]`).
+
+Status: Tasks 1–14 done. Task 15 adds browser tests for the six tools, which will move most of the
+"Tools" boxes below into the automated table; Task 16 finalizes this file.
 
 ## Setup
 
 ```bash
 cd pdf-mss-io
-nvm use            # Node 24
+nvm use                                  # Node 24
 npm install
-npm run dev        # http://localhost:5173
+npx playwright install chromium webkit   # once, ~300 MB, outside the repo
+npm run test:e2e                         # builds, then runs the browser tests
+npm run dev                              # http://localhost:5173 for the manual checks
 ```
 
-Test PDFs (available after Task 4): `.private/fixtures/plain.pdf` (5 pages, title "Plain sample"),
-`protected.pdf` (password `open-me`), `restricted.pdf` (opens without a password, printing disabled).
-Also keep one real-world PDF of your own handy.
+Test PDFs are in `e2e/.fixtures/` after a test run (and in `.private/fixtures/`): `plain.pdf`
+(5 pages, title "Plain sample"), `protected.pdf` (password `open-me`), `restricted.pdf` (opens without
+a password, printing disabled). Also keep one real-world PDF of your own handy.
 
-## Task 1: App shell (ready)
+## Automated checks (Playwright)
 
-- [ ] Header shows the padlock logo (same as the favicon) + "PDF Toolbox", Home link and a theme toggle button; the logo stays visible in dark mode, and the header fits on a 375 px wide window.
-- [ ] Footer reads "PDFs are processed locally in your browser. Nothing is uploaded."
-- [ ] Theme toggle switches light/dark; the choice survives a reload with no flash of the wrong theme.
-- [ ] With no saved choice, the app follows the system light/dark setting.
+Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
+
+| Check | Spec file |
+|---|---|
+| Header logo + "PDF Toolbox", Home link, theme toggle, footer text, six tool cards | `e2e/shell.spec.ts` |
+| Theme toggle survives a reload with no flash; follows the system theme when nothing is saved | `e2e/shell.spec.ts` |
+| Every tool URL loads directly | `e2e/shell.spec.ts` |
+| Home page loads no `.wasm` | `e2e/shell.spec.ts` |
+| Nothing overflows sideways at 375 px (home and every tool) | `e2e/shell.spec.ts` |
+| A page whose code fails to load shows "Something went wrong" inside the header and footer | `e2e/shell.spec.ts` |
+| No `type="password"` input anywhere; password fields masked and carry the password-manager opt-outs | `e2e/password-fields.spec.ts` |
+| Offline: service worker active and wasm cached, then with the server stopped `/info` and `/decrypt` load and decrypting works (Chromium and WebKit) | `e2e/offline.spec.ts` |
+
+## Owner checks
+
+### Look and feel
+
+- [ ] The pages look like the old app (fonts, background glow, card style) in light and dark mode.
 - [ ] The browser tab shows the new favicon (dark tile, white document, open padlock) in light and dark browser themes.
-- [ ] The page looks like the old app (fonts, background glow, card style).
+- [ ] Type a password in Decrypt and in Encrypt and submit: neither the browser nor your password manager offers to save it.
 
-## Task 4: Decrypt (ready)
+### Tools (most of these become automated in Task 15)
 
-- [ ] Header shows a "Decrypt" link on a wide window; home shows the Decrypt card.
-- [ ] `protected.pdf` with a wrong password → "Incorrect password. Check it and try again."
-- [ ] `protected.pdf` with `open-me` → "Your PDF is ready"; the download is named `protected-d.pdf` and opens without a password.
+Decrypt:
+- [ ] `protected.pdf` with a wrong password → "Incorrect password. Check it and try again."; then `open-me` → `protected-d.pdf` opens without a password.
 - [ ] `restricted.pdf` with an empty password → succeeds; the result prints normally.
-- [ ] A `.txt` file → "File must be a PDF."
-- [ ] "Decrypt another file" returns to an empty form; "Back to home" works.
-- [ ] DevTools → Network: opening `/` alone loads no `.wasm`; the first Decrypt loads `qpdf-*.wasm` once.
+- [ ] A `.txt` file → "File must be a PDF."; "Decrypt another file" and "Back to home" work.
 
-## Task 5: Encrypt (ready)
-
+Encrypt:
 - [ ] Different passwords → "Passwords don't match."; empty → "Password is required."
 - [ ] `plain.pdf`, password `secret`, printing unticked → `plain-protected.pdf` asks for `secret` in your PDF viewer, and printing is disabled.
 - [ ] `protected.pdf` → "This PDF is password-protected. Remove its password with Decrypt first." and the "Go to Decrypt" link works.
-- [ ] `restricted.pdf` → succeeds.
 
-## Task 6: Merge (ready)
-
-- [ ] Adding files in two batches appends them; up/down/remove work; up is disabled on the first row, down on the last.
-- [ ] `plain.pdf` + `restricted.pdf` → "2 files, 7 pages." plus the note that restrictions aren't kept; `merged.pdf` has the pages in the chosen order.
-- [ ] Adding `protected.pdf` → the error names "protected.pdf" and links to Decrypt.
+Merge:
+- [ ] Adding files in two batches appends them; up/down/remove work; up is disabled on the first row, down on the last; `merged.pdf` keeps the chosen order.
+- [ ] `plain.pdf` + `restricted.pdf` → "2 files, 7 pages." plus the note that restrictions aren't kept.
+- [ ] A protected, non-PDF or empty file → the error names that file; removing it clears the error.
 - [ ] Keyboard only: Tab reaches the drop zone (Enter opens the file picker) and every row button.
-- [ ] Adding a non-PDF renamed to `.pdf` (or an empty file) → the error names that file.
-- [ ] After removing the file an error was about, the error disappears.
 
-## Task 7: Extract pages (ready)
-
-- [ ] `plain.pdf` → "This PDF has 5 pages."; Extract stays disabled until then.
-- [ ] Pages ` 1 - 2 , Z ` → `plain-pages.pdf` with 3 pages; "Extracted 3 pages in your browser."
+Extract pages:
+- [ ] `plain.pdf` → "This PDF has 5 pages."; pages ` 1 - 2 , Z ` → `plain-pages.pdf` with 3 pages.
 - [ ] Pages `abc` → "Enter pages like 1-3,7 or 5-z."; pages `9` → "Could not process this PDF." with "out of range" detail.
-- [ ] `protected.pdf` → password-protected error with the Decrypt link.
 
-## Task 8: Compress (ready)
+Compress:
+- [ ] `plain.pdf` → "Your PDF is smaller" with before → after; compressing that download again → "No smaller version" without a download button.
 
-- [ ] `plain.pdf` → "Your PDF is smaller" with before → after and a percentage; the download opens.
-- [ ] Compressing that downloaded file again → "No smaller version", the qpdf note, and no download button.
-- [ ] `protected.pdf` → password-protected error with the Decrypt link.
-
-## Task 9: Info (ready)
-
-- [ ] `plain.pdf` → title "Plain sample", author "Test Author", a created date, 5 pages, PDF 1.7, Letter, "Not encrypted", file size, Fast web view "No", Attachments "None".
-- [ ] `restricted.pdf` → "Restrictions only (opens without a password)" with "AES-256" and "Printing" badges.
-- [ ] `protected.pdf` → password-protected error with the Decrypt link.
+Info:
+- [ ] `plain.pdf` → title, author, created date, 5 pages, PDF 1.7, Letter, "Not encrypted", Fast web view "No", Attachments "None".
+- [ ] `restricted.pdf` → "Restrictions only (opens without a password)" with "AES-256" and "Printing" badges; a linearized PDF shows "Linearized".
 - [ ] Your real-world PDF → no crash; missing fields are simply left out.
-- [ ] A linearized PDF (e.g. the Encrypt/Compress output re-saved with "fast web view", or any web-optimized PDF) shows the "Linearized" badge; `plain.pdf` shows "No".
 
-## Task 10: PWA and offline (ready)
-
-Run `npm run build && npm run preview` and open http://localhost:4173 in Chrome.
-
-- [ ] DevTools → Application → Service workers: `sw.js` is activated; Cache storage contains `qpdf-*.wasm`.
-- [ ] Application → Manifest: name "PDF Toolbox", icons shown, no installability errors.
-- [ ] Network → Offline, then reload `/decrypt` directly → the page loads, and decrypting `protected.pdf` works.
-- [ ] Offline, `/info` also loads and works.
-- [ ] Back online: after a new build, close every tab of the app and reopen it → the new version appears.
-
-## Task 12: Final checks (ready)
-
-Desktop (`npm run preview`; Chrome plus Safari or Firefox):
-
-- [ ] Every tool URL loads when pasted into a new tab (`/decrypt`, `/encrypt`, `/merge`, `/extract`, `/compress`, `/info`).
-- [ ] Both themes look right on every page.
-- [ ] Window 375 px wide: header shows only Home + theme toggle; home grid is one column; nothing overflows.
+Size limit:
 - [ ] A file over 250 MB (`mkfile 260m big.pdf`) → size-limit error and the button is disabled.
-- [ ] With the dev server stopped mid-session, clicking a tool you haven't opened yet shows "Something went wrong" with Reload / Back to home, inside the normal header and footer.
 
-Phone (deploy `dist/` somewhere with HTTPS, or `npm run preview -- --host` on the same Wi-Fi for the non-offline checks):
+### Your browsers
+
+- [ ] Open every tool once in your everyday browser (if it isn't Chrome): it works the same.
+- [ ] After a new build, close every tab of the app and reopen it → the new version appears.
+
+### Phone
+
+Deploy `dist/` somewhere with HTTPS (`npm run preview -- --host` on the same Wi-Fi works for the non-offline checks):
 
 - [ ] Add to Home Screen → opens full-screen with the padlock icon.
 - [ ] Encrypt a ~100 MB PDF: works, or the memory message appears (if it fails, tell Claude to lower the limits).
 - [ ] Encrypt a ~250 MB PDF: works, or the memory message appears (same).
 - [ ] Airplane mode → open from the home screen → Decrypt works.
 
-## Before release
+### Before release
 
 - [ ] Every box above is ticked.
