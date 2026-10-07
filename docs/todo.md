@@ -61,9 +61,9 @@ Phone (deploy `dist/` somewhere with HTTPS; `npm run preview -- --host` on the s
 - [x] Add to Home Screen → opens full-screen with the padlock icon.
 - [x] Encrypt a ~100 MB PDF: works.
 - [x] Encrypt the 100, 150, 200 and ~245 MB test files on your phone (owner reported 2026-10-07: all work on an iPhone 17 in a fresh tab, slowly; phone limit set to 250 MB).
-- [ ] On your phone, encrypting `.private/fixtures/big-200mb.pdf` shows "Encrypting… m:ss" counting up and "Large files can take a few minutes on phones." under the button. Note the time when it finishes and tell Claude (it checks the job time limit's margin: 200 MB gets 18 minutes).
+- [x] On your phone, encrypting `.private/fixtures/big-200mb.pdf` shows "Encrypting… m:ss" counting up and "Large files can take a few minutes on phones." under the button. Note the time when it finishes and tell Claude (it checks the job time limit's margin: 200 MB gets 18 minutes).
 - [x] Airplane mode → open from the home screen → Decrypt works.
-- [ ] Every box above is ticked.
+- [x] Every box above is ticked.
 
 ## After 1.0.0 (not part of the release gate)
 
