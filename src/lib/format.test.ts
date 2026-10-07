@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { describeSizeChange, formatBytes, parsePdfDate, sizeChange } from "@/lib/format";
+import { describeDuration, describeSizeChange, formatBytes, formatElapsed, parsePdfDate, sizeChange } from "@/lib/format";
 
 describe("formatBytes", () => {
   test.each([
@@ -44,4 +44,23 @@ describe("describeSizeChange", () => {
     [1000, 1000, "1000 B → 1000 B"],
     [1000, 1100, "1000 B → 1.1 KB"],
   ])("%d → %d", (before, after, text) => expect(describeSizeChange(before, after)).toBe(text));
+});
+
+describe("formatElapsed", () => {
+  test.each([
+    [0, "0:00"],
+    [999, "0:00"],
+    [5_000, "0:05"],
+    [102_000, "1:42"],
+    [3_725_000, "62:05"],
+    [-50, "0:00"],
+  ])("%d ms → %s", (ms, expected) => {
+    expect(formatElapsed(ms)).toBe(expected);
+  });
+});
+
+describe("describeDuration", () => {
+  test("under a second", () => expect(describeDuration(400)).toBe("Finished in under a second."));
+  test("seconds", () => expect(describeDuration(3_400)).toBe("Finished in 0:03."));
+  test("minutes", () => expect(describeDuration(102_000)).toBe("Finished in 1:42."));
 });

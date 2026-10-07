@@ -34,6 +34,8 @@ export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ErrorDescription | null>(null);
   const [status, setStatus] = useState<JobStatusState | null>(null);
+  /** How long the last successful job took, for the result page. */
+  const [lastDurationMs, setLastDurationMs] = useState<number | null>(null);
   const generation = useRef(0);
 
   useEffect(
@@ -50,6 +52,7 @@ export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) 
       setBusy(true);
       setError(null);
       setStatus({ phase: "load", label, startedAt, sizeBytes });
+      setLastDurationMs(null);
       let phase: JobPhase = "load";
       markJobStarted();
       try {
@@ -63,7 +66,9 @@ export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) 
             if (id === generation.current) setStatus({ phase: "run", label, startedAt, sizeBytes });
           },
         });
-        return id === generation.current ? result : null;
+        if (id !== generation.current) return null;
+        setLastDurationMs(Date.now() - startedAt);
+        return result;
       } catch (caught) {
         if (caught instanceof JobTimeoutError || caught instanceof EngineLoadTimeoutError) resetQpdf();
         if (id === generation.current) setError(describeQpdfError(caught, phase, { nameFiles }));
@@ -84,9 +89,10 @@ export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) 
     setBusy(false);
     setError(null);
     setStatus(null);
+    setLastDurationMs(null);
   }, []);
   const fail = useCallback((message: string) => setError({ message }), []);
   const clearError = useCallback(() => setError(null), []);
 
-  return { busy, error, status, run, reset, fail, clearError };
+  return { busy, error, status, lastDurationMs, run, reset, fail, clearError };
 }

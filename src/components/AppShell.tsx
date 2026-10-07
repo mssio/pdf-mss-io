@@ -46,7 +46,7 @@ export function AppShell() {
         <Outlet />
       </main>
       <footer className="border-t border-border/60 py-6 text-center text-xs text-muted-foreground">
-        PDFs are processed locally in your browser. Nothing is uploaded.
+        PDFs are processed locally in your browser. Nothing is uploaded. · Version {__APP_VERSION__}
       </footer>
     </div>
   );

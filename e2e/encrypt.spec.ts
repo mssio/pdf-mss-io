@@ -26,6 +26,7 @@ test("protects with the password and the chosen permissions", async ({ page }) =
   await page.getByLabel("Allow printing").click();
   await page.getByRole("button", { name: "Encrypt", exact: true }).click();
   await expect(page.getByText("Your PDF is protected")).toBeVisible();
+  await expect(page.getByText(/^Finished in (under a second|\d+:\d\d)\.$/)).toBeVisible();
   const file = await download(page, "Download protected PDF");
   expect(file.filename).toBe("plain-protected.pdf");
   await expect(inspectPdf(file.path)).rejects.toMatchObject({ code: "INVALID_PASSWORD" });

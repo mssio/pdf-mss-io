@@ -21,6 +21,7 @@ test("plain PDF details", async ({ page }) => {
   await expect(row(page, "Encryption")).toHaveText("Not encrypted");
   await expect(row(page, "Fast web view")).toHaveText("No");
   await expect(row(page, "Attachments")).toHaveText("None");
+  await expect(page.getByText(/^Finished in (under a second|\d+:\d\d)\.$/)).toBeVisible();
   await page.getByRole("button", { name: "Inspect another file" }).click();
   await expect(page.getByText("Drag and drop a PDF here")).toBeVisible();
 });

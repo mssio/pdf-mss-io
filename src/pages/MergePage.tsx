@@ -76,6 +76,7 @@ export function Component() {
   if (result.download && summary) {
     return (
       <ResultCard
+        durationMs={job.lastDurationMs}
         title="Your PDFs are merged"
         description={`${summary.files} files, ${summary.pages} pages.`}
         download={{ ...result.download, label: "Download merged PDF" }}

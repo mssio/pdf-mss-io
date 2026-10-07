@@ -75,6 +75,7 @@ export function Component() {
   if (result.download) {
     return (
       <ResultCard
+        durationMs={job.lastDurationMs}
         title="Pages extracted"
         description={`Extracted ${extractedPages} ${extractedPages === 1 ? "page" : "pages"} in your browser.`}
         download={{ ...result.download, label: "Download extracted pages" }}

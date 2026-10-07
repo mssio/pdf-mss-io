@@ -62,6 +62,7 @@ export function Component() {
   if (summary) {
     return summary.smaller && result.download ? (
       <ResultCard
+        durationMs={job.lastDurationMs}
         title="Your PDF is smaller"
         description={describeSizeChange(summary.before, summary.after)}
         download={{ ...result.download, label: "Download compressed PDF" }}
@@ -70,6 +71,7 @@ export function Component() {
       />
     ) : (
       <ResultCard
+        durationMs={job.lastDurationMs}
         title="No smaller version"
         description={describeSizeChange(summary.before, summary.after)}
         anotherLabel="Compress another file"

@@ -173,6 +173,7 @@ export function Component() {
   if (inspection) {
     return (
       <ResultCard
+        durationMs={job.lastDurationMs}
         title={inspection.details.document.title ?? inspection.fileName}
         description={`${inspection.fileName} · ${formatBytes(inspection.fileSize)}`}
         anotherLabel="Inspect another file"

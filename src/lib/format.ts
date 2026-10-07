@@ -39,3 +39,14 @@ export function parsePdfDate(raw: string): Date | null {
   const offset = sign ? (sign === "+" ? 1 : -1) * (Number(offsetHours) * 60 + Number(offsetMinutes)) : 0;
   return new Date(utc - offset * 60_000);
 }
+
+/** 102000 → "1:42" (minutes keep counting past 59). */
+export function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+/** Result-page line for how long a job took: "Finished in 1:42." */
+export function describeDuration(ms: number): string {
+  return ms < 1000 ? "Finished in under a second." : `Finished in ${formatElapsed(ms)}.`;
+}

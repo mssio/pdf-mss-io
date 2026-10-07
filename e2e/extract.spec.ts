@@ -14,6 +14,7 @@ test("shows the page count and extracts loosely typed ranges", async ({ page }) 
   await page.getByLabel("Pages").fill(" 1 - 2 , Z ");
   await extract.click();
   await expect(page.getByText("Extracted 3 pages in your browser.")).toBeVisible();
+  await expect(page.getByText(/^Finished in (under a second|\d+:\d\d)\.$/)).toBeVisible();
   const file = await download(page, "Download extracted pages");
   expect(file.filename).toBe("plain-pages.pdf");
   expect(await inspectPdf(file.path)).toMatchObject({ pageCount: 3 });

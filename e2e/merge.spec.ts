@@ -20,6 +20,7 @@ test("files append, reorder and remove; merge keeps the chosen order", async ({ 
   await expect(rows(page).first()).toContainText("two-pages.pdf");
   await page.getByRole("button", { name: "Merge", exact: true }).click();
   await expect(page.getByText("2 files, 7 pages.")).toBeVisible();
+  await expect(page.getByText(/^Finished in (under a second|\d+:\d\d)\.$/)).toBeVisible();
   await expect(page.getByText("Restrictions from the original files aren't kept in the merged PDF.")).toHaveCount(0);
   const file = await download(page, "Download merged PDF");
   expect(file.filename).toBe("merged.pdf");

@@ -59,6 +59,7 @@ export function Component() {
   if (result.download) {
     return (
       <ResultCard
+        durationMs={job.lastDurationMs}
         title="Your PDF is ready"
         description="Decrypted in your browser. Download it now; the file isn't stored anywhere."
         download={{ ...result.download, label: "Download decrypted PDF" }}

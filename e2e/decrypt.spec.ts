@@ -15,6 +15,7 @@ test("wrong password, then the right one, decrypts the same file", async ({ page
   await page.getByLabel("Password", { exact: true }).fill("open-me");
   await page.getByRole("button", { name: "Decrypt", exact: true }).click();
   await expect(page.getByText("Your PDF is ready")).toBeVisible();
+  await expect(page.getByText(/^Finished in (under a second|\d+:\d\d)\.$/)).toBeVisible();
   const file = await download(page, "Download decrypted PDF");
   expect(file.filename).toBe("protected-d.pdf");
   expect(await inspectPdf(file.path)).toMatchObject({ encrypted: false, pageCount: 3 });

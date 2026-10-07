@@ -22,6 +22,7 @@ test("compresses, and a second pass reports no smaller version", async ({ page }
     .setInputFiles({ name: file.filename, mimeType: "application/pdf", buffer: await readFile(file.path) });
   await page.getByRole("button", { name: "Compress", exact: true }).click();
   await expect(page.getByText("No smaller version")).toBeVisible();
+  await expect(page.getByText(/^Finished in (under a second|\d+:\d\d)\.$/)).toBeVisible();
   await expect(page.getByText(/already as small as qpdf can make it/)).toBeVisible();
   await expect(page.getByRole("link", { name: "Download compressed PDF" })).toHaveCount(0);
 });

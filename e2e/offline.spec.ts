@@ -39,7 +39,8 @@ async function startPreview(port: number): Promise<ChildProcess> {
   });
   running.add(child);
   try {
-    for (let attempt = 0; attempt < 100; attempt++) {
+    // Up to 30 s: `npx vite preview` can start slowly on a busy machine.
+    for (let attempt = 0; attempt < 300; attempt++) {
       // --strictPort makes vite exit if the port was taken; never trust another process's answer.
       if (child.exitCode !== null) throw new Error(`vite preview exited early on port ${port}`);
       try {

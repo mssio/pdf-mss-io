@@ -87,6 +87,7 @@ export function Component() {
   if (result.download) {
     return (
       <ResultCard
+        durationMs={job.lastDurationMs}
         title="Your PDF is protected"
         description="Encrypted with AES-256 in your browser. Anyone opening it will need the password."
         download={{ ...result.download, label: "Download protected PDF" }}

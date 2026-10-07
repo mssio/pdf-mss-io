@@ -1,6 +1,11 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
 import { TOOL_PATHS } from "./helpers";
+
+const { version } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+  version: string;
+};
 
 test("header, footer and home grid", async ({ page }) => {
   await page.goto("/");
@@ -9,7 +14,9 @@ test("header, footer and home grid", async ({ page }) => {
   await expect(header.locator('img[src="/favicon.svg"]')).toBeVisible();
   await expect(header.getByRole("link", { name: "Home" })).toBeVisible();
   await expect(header.getByRole("button", { name: /Switch to (dark|light) mode/ })).toBeVisible();
-  await expect(page.locator("footer")).toHaveText("PDFs are processed locally in your browser. Nothing is uploaded.");
+  await expect(page.locator("footer")).toHaveText(
+    `PDFs are processed locally in your browser. Nothing is uploaded. · Version ${version}`,
+  );
   await expect(page.getByRole("link", { name: "Open tool" })).toHaveCount(6);
 });
 

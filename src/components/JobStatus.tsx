@@ -1,13 +1,9 @@
 import { useEffect, useState } from "react";
 
+import { formatElapsed } from "@/lib/format";
 import type { JobStatusState } from "@/lib/use-qpdf-job";
 
 const LARGE_FILE_BYTES = 50 * 1024 * 1024;
-
-function formatElapsed(ms: number): string {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-}
 
 /** The running job's step and elapsed time (qpdf reports no percentage), plus a hint for large files. */
 export function JobStatus({ status }: { status: JobStatusState | null }) {
