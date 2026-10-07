@@ -1,4 +1,4 @@
-import { Combine, FileKey2, FileLock2, FileOutput, Shrink, type LucideIcon } from "lucide-react";
+import { Combine, FileKey2, FileLock2, FileOutput, FileSearch, Shrink, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 
 export type Tool = {
@@ -60,5 +60,14 @@ export const tools: Tool[] = [
     description: "Repack a PDF's internal data to make it smaller. Best for text-heavy files.",
     icon: Shrink,
     load: () => import("@/pages/CompressPage"),
+  },
+  {
+    id: "info",
+    path: "/info",
+    title: "PDF info",
+    navLabel: "Info",
+    description: "See a PDF's properties, page size, restrictions and attachments.",
+    icon: FileSearch,
+    load: () => import("@/pages/InfoPage"),
   },
 ];

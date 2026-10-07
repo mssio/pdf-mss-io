@@ -2,6 +2,7 @@ import { createQpdf, type Qpdf } from "@mssio/qpdf-wasm";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { assertOutput, describeQpdfError, ensureNoOpenPassword, PasswordProtectedError } from "@/lib/qpdf";
+import { parseQpdfJson, QPDF_JSON_ARGS } from "@/lib/pdf-info";
 import { generateOwnerPassword } from "@/lib/passwords";
 import { makePdf } from "@/test/make-pdf";
 
@@ -136,5 +137,29 @@ describe("compress", () => {
   test("keeps owner restrictions", async () => {
     const { output } = await qpdf.compress(pdfFile(await restrictionOnly()));
     expect((await qpdf.info(output.slice())).encrypted).toBe(true);
+  });
+});
+
+describe("info JSON", () => {
+  test("parses live qpdf --json output", async () => {
+    const result = await qpdf.run([...QPDF_JSON_ARGS, "in.pdf"], {
+      files: { "in.pdf": pdfFile(makePdf(2, { title: "Hello" })) },
+    });
+    expect(result.exitCode).toBe(0);
+    const details = parseQpdfJson(JSON.parse(result.stdout));
+    expect(details.document).toMatchObject({ title: "Hello", author: "Test Author" });
+    expect(details.document.created?.toISOString()).toBe("2026-01-01T12:00:00.000Z");
+    expect(details.firstPageSize?.name).toBe("Letter");
+    expect(details.mixedSizes).toBe(false);
+    expect(details.security).toEqual({ encrypted: false });
+  });
+
+  test("reports restrictions of a restriction-only PDF", async () => {
+    const result = await qpdf.run([...QPDF_JSON_ARGS, "in.pdf"], { files: { "in.pdf": pdfFile(await restrictionOnly()) } });
+    expect(parseQpdfJson(JSON.parse(result.stdout)).security).toEqual({
+      encrypted: true,
+      method: "AES-256",
+      denied: ["Printing"],
+    });
   });
 });
