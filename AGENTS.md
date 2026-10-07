@@ -30,6 +30,7 @@ src/router.ts             createBrowserRouter: AppShell, home, one lazy route pe
 src/main.tsx              entry; registers the service worker
 src/components/           AppShell, PdfFileDropzone, ToolPage, ResultCard, ErrorBox, SizeNotice
 src/components/RouteError.tsx  error screen; mounted on a pathless route inside AppShell (src/router.ts)
+src/pages/NotFoundPage.tsx  catch-all "Page not found" route inside AppShell
 src/components/ui/        shadcn primitives (new-york); edit sparingly, keep tokens
 src/components/ui/secret-input.tsx  password field browsers/password managers don't save
 src/pages/                HomePage + one <Name>Page.tsx per tool (exports `Component`)
@@ -84,8 +85,7 @@ playwright.config.ts      E2E config: vite preview :4173, chromium all specs, we
 ## PWA notes
 
 - `vite-plugin-pwa` (`vite.config.ts`) uses `registerType: 'prompt'` with no prompt UI (`registerSW({ immediate: true })`
-  without callbacks). A new deployment is used after every tab of the app has been closed and the app is
-  opened again; open pages are never reloaded.
+  without callbacks). A new deployment is downloaded the next time the app is opened online and used once every tab of the app has been closed and it is opened again; open pages are never reloaded.
 - Workbox precaches `**/*.{js,css,html,svg,png,ico,wasm,webmanifest}` with
   `maximumFileSizeToCacheInBytes: 3_000_000`. qpdf's wasm is ~2.2 MB; if an asset grows past 3 MB the
   build fails. Raise the limit deliberately, never drop the wasm from the precache.
@@ -111,6 +111,7 @@ both if the package is upgraded.
   stops the server. `context.setOffline()` breaks navigation in WebKit, so don't use it.
 - The error boundary must stay on the pathless route in `src/router.ts`: React Router ignores a lazy
   route's own `ErrorBoundary` when its import fails (pinned by `shell.spec.ts`).
+- Port 4173 must be free (`reuseExistingServer: false`, `--strictPort`). The offline spec kills its server's process group with `process.kill(-pid)`, which is macOS/Linux only.
 - New tool → new `e2e/<tool>.spec.ts` covering its messages and verifying its downloads.
 
 ## Versions

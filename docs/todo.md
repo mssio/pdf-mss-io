@@ -25,13 +25,13 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 
 | Check | Spec file |
 |---|---|
-| Header logo + "PDF Toolbox", Home link, theme toggle, footer text, six tool cards | `e2e/shell.spec.ts` |
+| Header logo + "PDF Toolbox", Home link, theme toggle, footer text, six tool cards, unknown addresses show "Page not found" with a way home | `e2e/shell.spec.ts` |
 | Theme toggle survives a reload with no flash; follows the system theme when nothing is saved | `e2e/shell.spec.ts` |
 | Every tool URL loads directly | `e2e/shell.spec.ts` |
 | Home page loads no `.wasm` | `e2e/shell.spec.ts` |
 | Nothing overflows sideways at 375 px (home and every tool) | `e2e/shell.spec.ts` |
 | A page whose code fails to load shows "Something went wrong" inside the header and footer | `e2e/shell.spec.ts` |
-| Decrypt: wrong → right password on the same file, `protected-d.pdf` opens without a password, empty password removes restrictions, non-PDF refused, "Decrypt another file" / "Back to home", wasm loads on the first job only, over 250 MB refused | `e2e/decrypt.spec.ts` |
+| Decrypt: wrong → right password on the same file, `protected-d.pdf` opens without a password, empty password removes restrictions, non-PDF refused, "Decrypt another file" / "Back to home", the wasm loads only when a job runs, over 250 MB refused | `e2e/decrypt.spec.ts` |
 | Encrypt: password validation, `plain-protected.pdf` needs the password and denies printing, password-protected input → Decrypt link, restriction-only input accepted | `e2e/encrypt.spec.ts` |
 | Merge: append, reorder (move up), remove, disabled first-up/last-down, order kept in `merged.pdf`, restrictions note only when an input is restricted, merged output unencrypted, protected/unreadable/empty files named, error clears when the protected file is removed, keyboard path | `e2e/merge.spec.ts` |
 | Extract: page count, loose ranges → `plain-pages.pdf` with 3 pages, invalid and out-of-range messages, protected input → Decrypt link | `e2e/extract.spec.ts` |
@@ -49,7 +49,7 @@ Only a person can check these. Tick each box after checking it.
 - [ ] Encrypt `plain.pdf` with password `secret` and printing unticked: your PDF viewer asks for `secret` and blocks printing.
 - [ ] Type a password in Decrypt and in Encrypt and submit: neither the browser nor your password manager offers to save it.
 - [ ] Open every tool once in your everyday browser (if it isn't Chrome): it works the same.
-- [ ] After a new build, close every tab of the app and reopen it → the new version appears.
+- [ ] After a new build, open the app once (online), close every tab, then reopen it → the new version appears.
 - [ ] Inspect one real-world PDF of your own in Info → no crash; missing fields are simply left out.
 
 Phone (deploy `dist/` somewhere with HTTPS; `npm run preview -- --host` on the same Wi-Fi works for the non-offline checks):

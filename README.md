@@ -43,6 +43,7 @@ npm run icons     # regenerate PWA icons from public/favicon.svg
 ```
 
 Before the first `npm run test:e2e`, install the browsers once: `npx playwright install chromium webkit` (~300 MB, outside the repo).
+`npm run test:e2e` needs port 4173 free (stop any running `npm run preview` first). The E2E cleanup uses POSIX process groups, so run it on macOS or Linux.
 
 ## Stack
 
@@ -51,9 +52,9 @@ shadcn/ui (new-york) on Radix, `@mssio/qpdf-wasm`, `vite-plugin-pwa`, Vitest 5, 
 
 ## Hosting `dist/`
 
-`dist/` is static. Any web server or static host works if it does three things:
-
 The app must be served from the domain root (`https://example.com/`), not a sub-path; `start_url` and `scope` are `/`.
+
+`dist/` is static. Any web server or static host works if it does three things:
 
 1. **Falls back to `index.html`** for unknown paths, so `/decrypt` loads on a direct visit or refresh.
 2. Serves `.wasm` as `application/wasm` (fastest compile; other types still work).
@@ -98,7 +99,7 @@ theme on load.
 ## Offline
 
 The service worker precaches the whole app, including the qpdf worker and `.wasm` (about 2.7 MB in total),
-after the first online visit. A new deployment is used after every tab of the app has been closed and the app is opened again; open pages are never reloaded.
+after the first online visit. A new deployment is downloaded the next time the app is opened online and used once every tab of the app has been closed and it is opened again; open pages are never reloaded.
 
 ## Adding a tool
 

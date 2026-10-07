@@ -267,8 +267,7 @@ Same form and copy as before except:
 ## 5. PWA and offline
 
 - `vite-plugin-pwa`, `generateSW`, `registerType: "prompt"` with no prompt UI, registered from `main.tsx` via
-  `virtual:pwa-register`. New deployments are used after every tab of the app has been closed and
-  it is opened again; open pages are never reloaded.
+  `virtual:pwa-register`. A new deployment is downloaded the next time the app is opened online and used once every tab of the app has been closed and it is opened again; open pages are never reloaded.
 - Manifest: name and short_name "PDF Toolbox", `display: "standalone"`, `start_url: "/"`,
   `theme_color` and `background_color` `#ffffff`.
 - Icons generated from `public/favicon.svg` by `@vite-pwa/assets-generator` (minimal 2023 preset):
@@ -277,8 +276,7 @@ Same form and copy as before except:
   `maximumFileSizeToCacheInBytes: 3_000_000` (qpdf.wasm ~2.2 MB > 2 MiB default),
   `navigateFallback: "/index.html"`. All lazy tool chunks, the qpdf worker script and the wasm
   are precached (verified in a prototype build).
-- First visit must be online; afterwards everything works offline. New deployments activate on the
-  next online launch; no update prompt.
+- First visit must be online; afterwards everything works offline. No update prompt.
 
 ## 6. Favicon and docs
 
