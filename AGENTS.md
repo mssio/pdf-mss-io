@@ -29,7 +29,9 @@ src/tools.ts              tool registry → routes, header links, home cards
 src/router.ts             createBrowserRouter: AppShell, home, one lazy route per tool
 src/main.tsx              entry; registers the service worker
 src/components/           AppShell, PdfFileDropzone, ToolPage, ResultCard, ErrorBox, SizeNotice
+src/components/RouteError.tsx  error screen; mounted on a pathless route inside AppShell (src/router.ts)
 src/components/ui/        shadcn primitives (new-york); edit sparingly, keep tokens
+src/components/ui/secret-input.tsx  password field browsers/password managers don't save
 src/pages/                HomePage + one <Name>Page.tsx per tool (exports `Component`)
 src/lib/qpdf.ts           getQpdf, ensureNoOpenPassword, assertOutput, describeQpdfError, logWarnings
 src/lib/use-qpdf-job.ts   busy/error state for one job; drops stale results
@@ -38,6 +40,8 @@ src/lib/*.ts              pure helpers (filename, format, limits, pdf-files, pag
                           passwords, merge-list, pdf-info), each with a *.test.ts
 src/test/make-pdf.ts      builds valid PDFs for tests
 public/favicon.svg        source of every icon (`npm run icons` regenerates the PNGs/ICO)
+e2e/                      Playwright specs (one per tool + shell, offline, password fields, screenshots)
+playwright.config.ts      E2E config: vite preview :4173, chromium all specs, webkit offline spec only
 ```
 
 ## qpdf rules
@@ -65,6 +69,7 @@ public/favicon.svg        source of every icon (`npm run icons` regenerates the 
 - The theme key `pdf-mss-io-theme` appears in `src/lib/theme.ts` **and** the inline script in
   `index.html`; change both together.
 - Copy style: short sentences, say what happens on the user's device.
+- Password fields use `SecretInput`, never `<input type="password">` (browsers ignore `autocomplete="off"` and offer to save). Trade-off: screen readers may read the typed characters.
 
 ## Adding a tool
 
@@ -95,6 +100,19 @@ public/favicon.svg        source of every icon (`npm run icons` regenerates the 
 That's why `assertOutput()` guards every download and why `MAX_TOTAL_BYTES` is 250 MB. Re-check
 both if the package is upgraded.
 
+## E2E tests
+
+- `npm run test:e2e` builds, starts `vite preview` on :4173 and runs `e2e/` with Playwright. Install
+  browsers once with `npx playwright install chromium webkit`.
+- Fixtures are generated fresh by `e2e/global-setup.ts` into `e2e/.fixtures/` (git-ignored).
+  Downloads are verified with `inspectPdf()` (real qpdf in Node), not just by file name.
+- Service workers are blocked by default (they would bypass `page.route()`); `offline.spec.ts`
+  re-enables them, starts its own preview server on a free port, waits for the cached wasm, then
+  stops the server. `context.setOffline()` breaks navigation in WebKit, so don't use it.
+- The error boundary must stay on the pathless route in `src/router.ts`: React Router ignores a lazy
+  route's own `ErrorBoundary` when its import fails (pinned by `shell.spec.ts`).
+- New tool → new `e2e/<tool>.spec.ts` covering its messages and verifying its downloads.
+
 ## Versions
 
 - Node 24 LTS (`.nvmrc`). Vitest 5 doesn't support Node 25.
@@ -106,13 +124,10 @@ both if the package is upgraded.
 
 ```bash
 npm run lint && npm test && npm run build
+npm run test:e2e   # for any UI or behavior change
 ```
 
-All three must pass. For UI changes also run `npm run preview` and check the page in a browser,
-including dark mode and a phone-width window.
-
-Browser, offline and phone checks are listed in `docs/todo.md`. Only the owner ticks them. When a
-task finishes, mark its section `(ready)`; never start a release while any box is unticked.
+Checks only a person can do are the owner boxes in `docs/todo.md`; only the owner ticks them. Never start a release unless `npm run test:e2e` passes and every box is ticked.
 
 ## Workflow
 

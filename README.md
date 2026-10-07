@@ -35,16 +35,19 @@ WebAssembly memory runs out on larger inputs. The values live in `src/lib/limits
 npm install
 npm run dev       # dev server on http://localhost:5173
 npm test          # unit + integration tests (real qpdf wasm in Node)
+npm run test:e2e  # browser tests with Playwright (builds first)
 npm run lint
 npm run build     # type-check and build static files into dist/
 npm run preview   # serve dist/ on http://localhost:4173 (service worker active)
 npm run icons     # regenerate PWA icons from public/favicon.svg
 ```
 
+Before the first `npm run test:e2e`, install the browsers once: `npx playwright install chromium webkit` (~300 MB, outside the repo).
+
 ## Stack
 
 Vite 8, React 19, React Router 8 (data router, lazy routes), TypeScript 6.0, Tailwind CSS 4,
-shadcn/ui (new-york) on Radix, `@mssio/qpdf-wasm`, `vite-plugin-pwa`, Vitest 5.
+shadcn/ui (new-york) on Radix, `@mssio/qpdf-wasm`, `vite-plugin-pwa`, Vitest 5, Playwright (E2E).
 
 ## Hosting `dist/`
 
@@ -107,7 +110,6 @@ after the first online visit. A new deployment is used after every tab of the ap
 
 ## Release checks
 
-Manual browser, offline and phone checks live in [docs/todo.md](docs/todo.md). The owner ticks
-them; version 1.0.0 is not released while any box is unticked.
+Release 1.0.0 needs `npm run test:e2e` to pass and every owner box in [docs/todo.md](docs/todo.md) ticked.
 
 See [AGENTS.md](AGENTS.md) for the rules the code follows.

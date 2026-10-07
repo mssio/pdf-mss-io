@@ -234,7 +234,7 @@ Same form and copy as before except:
   `normalizePageRanges` removes spaces and lower-cases `Z`, then validates against
   `^(\d+|z)(-(\d+|z))?(,(\d+|z)(-(\d+|z))?)*$`; invalid → "Enter pages like 1-3,7 or 5-z." Bounds
   are left to qpdf; its message is shown as detail (e.g. "number 9 out of range").
-- Call `selectPages(file, normalized)`. Result note: "Extracted P pages."
+- Call `selectPages(file, normalized)`. Result note: "Extracted P pages in your browser."
 
 ### Compress (`/compress`)
 - Single file, no options (level 9 fixed).
