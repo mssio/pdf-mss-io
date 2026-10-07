@@ -39,6 +39,7 @@ src/lib/use-qpdf-job.ts   busy/error state for one job; drops stale results
 src/lib/use-blob-url.ts   owns the download blob URL and revokes it
 src/lib/crash-guard.ts    sessionStorage note while a job runs; src/components/CrashNotice.tsx explains a mid-job reload
 src/components/JobStatus.tsx  step + elapsed time under the submit button while a job runs
+src/app-version.d.ts      __APP_VERSION__ (package.json version, injected by vite.config.ts; shown in the footer)
 src/lib/*.ts              pure helpers (filename, format, limits, pdf-files, page-ranges,
                           passwords, merge-list, pdf-info), each with a *.test.ts
 src/test/make-pdf.ts      builds valid PDFs for tests
@@ -59,7 +60,7 @@ playwright.config.ts      E2E config: vite preview :4173, chromium all specs, we
   `<JobStatus status={job.status} />`, and enforces two limits via `runWithTimeLimits` (`src/lib/run-job.ts`): the engine must load within
   `ENGINE_LOAD_TIMEOUT_MS`, and the job must finish within `jobTimeoutMs(sizeBytes)` counted from then;
   on either timeout the stuck engine is replaced (`resetQpdf()`). `label` and `sizeBytes` are required:
-  always pass the real input size.
+  always pass the real input size. Pass `durationMs={job.lastDurationMs}` to `ResultCard` ("Finished in m:ss.").
 - Call `assertOutput(output)` on every output before it becomes a download. qpdf can "succeed" with
   a near-empty file when the wasm runs out of memory (seen with encrypt at 600 MB).
 - Log `warnings` with `logWarnings`; don't show them.

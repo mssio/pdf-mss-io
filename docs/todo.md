@@ -25,7 +25,7 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 
 | Check | Spec file |
 |---|---|
-| Header logo + "PDF Toolbox", Home link, theme toggle, footer text, six tool cards, unknown addresses show "Page not found" with a way home | `e2e/shell.spec.ts` |
+| Header logo + "PDF Toolbox", Home link, theme toggle, footer text with the app version, six tool cards, unknown addresses show "Page not found" with a way home | `e2e/shell.spec.ts` |
 | Theme toggle survives a reload with no flash; follows the system theme when nothing is saved | `e2e/shell.spec.ts` |
 | Every tool URL loads directly | `e2e/shell.spec.ts` |
 | Home page loads no `.wasm` | `e2e/shell.spec.ts` |
@@ -39,6 +39,7 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 | Info: plain PDF details, restriction badges, Linearized badge, protected input → Decrypt link | `e2e/info.spec.ts` |
 | No `type="password"` input anywhere; password fields masked and carry the password-manager opt-outs | `e2e/password-fields.spec.ts` |
 | Phones (small touch screen, either orientation): files over the phone limit are refused with "On phones, files must be … Use a computer for bigger files."; a computer gets the computer wording | `e2e/phone.spec.ts` |
+| Every tool's result page shows how long the job took ("Finished in m:ss.") | all six tool specs |
 | While a job runs, the step and elapsed time show ("Loading the PDF engine… 0:05", then the tool's step) plus a hint for files over 50 MB; a stuck engine times out with "This file took too long to process on this device…" and the next job works with a fresh engine | `e2e/job-safeguard.spec.ts` |
 | A job cut off by a page reload is explained once after the reload ("The page reloaded while a file was being processed…"), and a finished job leaves no notice | `e2e/phone.spec.ts` |
 | Offline: service worker active and wasm cached, then with the server stopped `/info` and `/decrypt` load and decrypting works (Chromium and WebKit) | `e2e/offline.spec.ts` |

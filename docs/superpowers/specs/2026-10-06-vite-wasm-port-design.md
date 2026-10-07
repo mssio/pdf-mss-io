@@ -420,6 +420,14 @@ manual list shrinks to about 9 items and the same checks run on every future cha
 - No percentage: `@mssio/qpdf-wasm` 1.0.0 returns qpdf's output only when a job ends. A real progress
   bar needs an `onProgress` option in the package (owner's follow-up, see docs/todo.md "After 1.0.0").
 
+**When a job finishes**, every result page (all six tools, including Info and Compress's "No smaller
+version") shows how long it took above its buttons: "Finished in 1:42." (`describeDuration`; under a
+second: "Finished in under a second."), from `useQpdfJob().lastDurationMs`.
+
+**App version in the footer**: "PDFs are processed locally in your browser. Nothing is uploaded. ·
+Version 1.0.0", from `package.json` via `vite.config.ts` `define: { __APP_VERSION__ }` (declared in
+`src/app-version.d.ts`).
+
 **Safeguard** (`src/lib/run-job.ts` `runWithTimeLimits`, used by `useQpdfJob`; `src/lib/qpdf.ts`):
 - Loading the engine and running the job have separate limits. Loading: `ENGINE_LOAD_TIMEOUT_MS`
   (2 minutes) → `EngineLoadTimeoutError` → "Couldn't load the PDF engine. Check your connection and

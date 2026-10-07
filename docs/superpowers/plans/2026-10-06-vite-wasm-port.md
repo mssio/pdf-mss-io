@@ -5510,6 +5510,14 @@ export function CrashNotice() {
 
 `npx tsc -b && npm run lint && npm test && npm run test:e2e` → lint clean, 141 unit tests, 48 Playwright tests (twice), no stray `vite preview`.
 
+- [x] **Step 4: Completion time and app version (owner request, 2026-10-07)**
+
+- `src/lib/format.ts`: `formatElapsed(ms)` (moved from `JobStatus`) and `describeDuration(ms)` → "Finished in under a second." / "Finished in m:ss.", unit-tested.
+- `useQpdfJob` records `lastDurationMs` (start of the job → success; cleared on a new run and on `reset()`); `ResultCard` takes a required `durationMs: number | null` and shows `describeDuration` above its buttons; all six pages pass `job.lastDurationMs`.
+- `vite.config.ts`: `define: { __APP_VERSION__: JSON.stringify(version) }` from `package.json`; `src/app-version.d.ts` declares it; the footer reads "PDFs are processed locally in your browser. Nothing is uploaded. · Version {__APP_VERSION__}".
+- E2E: every tool spec asserts `/^Finished in (under a second|\d+:\d\d)\.$/` on its result page; `shell.spec.ts` asserts the footer with the version read from `package.json`. The offline spec's preview start-up wait went from 10 s to 30 s (it flaked once on a busy machine).
+- Verify: 150 unit tests, 48 Playwright tests (twice).
+
 ---
 
 ### Task 18: Release 1.0.0
