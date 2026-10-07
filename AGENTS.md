@@ -19,7 +19,7 @@ Web Worker). It is a PWA that works offline. Design spec:
   `ensureNoOpenPassword(qpdf, file)` first and shows "Remove its password with Decrypt first".
   Restriction-only PDFs (owner password only) are accepted everywhere. No password fields outside
   Decrypt.
-- **Size limit:** `MAX_TOTAL_BYTES` (250 MB) and `PHONE_WARN_BYTES` (100 MB) in `src/lib/limits.ts`
+- **Size limit:** `MAX_TOTAL_BYTES` (250 MB) and the phone hard limit `PHONE_MAX_BYTES` (100 MB) in `src/lib/limits.ts`
   are the only source of these numbers.
 
 ## Map
@@ -37,6 +37,7 @@ src/pages/                HomePage + one <Name>Page.tsx per tool (exports `Compo
 src/lib/qpdf.ts           getQpdf, ensureNoOpenPassword, assertOutput, describeQpdfError, logWarnings
 src/lib/use-qpdf-job.ts   busy/error state for one job; drops stale results
 src/lib/use-blob-url.ts   owns the download blob URL and revokes it
+src/lib/crash-guard.ts    sessionStorage note while a job runs; src/components/CrashNotice.tsx explains a mid-job reload
 src/lib/*.ts              pure helpers (filename, format, limits, pdf-files, page-ranges,
                           passwords, merge-list, pdf-info), each with a *.test.ts
 src/test/make-pdf.ts      builds valid PDFs for tests

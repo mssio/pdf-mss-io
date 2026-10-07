@@ -88,7 +88,8 @@ src/components/PdfFileDropzone.tsx  ported look; controlled; gains `multiple` mo
 src/components/ToolPage.tsx         shared tool layout: title, intro, card
 src/components/ResultCard.tsx       shared success card: download button, notes, "another"/"home"
 src/components/ErrorBox.tsx         the old red error paragraph, optional muted detail and Decrypt link
-src/components/SizeNotice.tsx       over-limit error or phone warning for the selected total
+src/components/SizeNotice.tsx       over-limit error (computer or phone limit) for the selected total
+src/components/CrashNotice.tsx      one-time notice after a reload that cut off a job (section 3)
 src/components/ui/{button,card,input,label}.tsx           ported shadcn, unchanged
 src/components/ui/{checkbox,alert,badge,separator}.tsx    added from shadcn (new-york), same tokens
 src/components/ui/secret-input.tsx  masked, never-saved password input (section 10)
@@ -98,7 +99,8 @@ src/lib/use-theme.ts        ported unchanged
 src/lib/qpdf.ts             getQpdf(), ensureNoOpenPassword(), describeQpdfError(), assertOutput()
 src/lib/use-qpdf-job.ts     busy/error state for one qpdf job; ignores results after reset/unmount
 src/lib/use-blob-url.ts     owns one blob URL; revokes on replace/clear/unmount
-src/lib/limits.ts           MAX_TOTAL_BYTES, PHONE_WARN_BYTES, checkSize(), isLikelyPhone()
+src/lib/limits.ts           MAX_TOTAL_BYTES, PHONE_MAX_BYTES, checkSize(), isLikelyPhone()
+src/lib/crash-guard.ts      job-running note in sessionStorage; CrashNotice explains a mid-job reload
 src/lib/pdf-files.ts        isPdfFile(), pickPdfFiles()
 src/lib/filename.ts         outputFilename(name, suffix)
 src/lib/format.ts           formatBytes(), sizeChange(), parsePdfDate()
@@ -183,14 +185,21 @@ empty after trimming becomes `document`):
 ## 3. Size policy
 
 - `MAX_TOTAL_BYTES = 250 * 1024 * 1024`, applied to the sum of all selected inputs in every tool.
-  Exactly 250 MB is allowed. Over the limit: error shown immediately, submit disabled.
-- `PHONE_WARN_BYTES = 100 * 1024 * 1024`. If `isLikelyPhone()` and total > 100 MB: amber `Alert`
-  (not blocking): "Large files may fail on phones. If it doesn't work, try a computer."
-- `isLikelyPhone()`: `navigator.deviceMemory <= 4` when available (Chromium), otherwise
-  `matchMedia("(pointer: coarse) and (max-width: 820px)")`.
+  Exactly 250 MB is allowed. Over the limit: error shown immediately, submit disabled: "Files must be
+  250 MB or less in total (you selected X)."
+- `PHONE_MAX_BYTES` (100 MB until the owner's 150/200 MB phone test sets it) is a **hard** limit when
+  `isLikelyPhone()`: "On phones, files must be X MB or less in total (you selected Y). Use a computer
+  for bigger files." Reason (owner test, 2026-10-07): on an iPhone 17 a ~245 MB encrypt makes iOS kill
+  and reload the page, so qpdf never gets to report "Not enough memory"; 100 MB works.
+- `isLikelyPhone()`: `matchMedia("(pointer: coarse) and (max-width: 820px)")` matches, **or**
+  `navigator.deviceMemory <= 4` (Chromium). A narrow touch screen counts as a phone even when Chrome
+  reports plenty of memory.
+- Crash notice (`src/lib/crash-guard.ts`): `useQpdfJob` writes a `pdf-mss-io-job-running` note to
+  `sessionStorage` before a job and removes it after. If the page loads with the note present (the
+  browser killed it mid-job), `CrashNotice` in `AppShell` shows once, dismissible: "The page reloaded
+  while a file was being processed, usually because the file was too big for this device's memory. Try
+  a smaller file or a computer." Storage errors are ignored.
 - Constants live in `src/lib/limits.ts` only; README and AGENTS.md reference them.
-- Manual check during implementation: run a 100 MB and a 250 MB encrypt on the owner's phone and
-  adjust the constants if needed.
 
 ## 4. Tools
 
@@ -313,7 +322,7 @@ at 6.0 for typescript-eslint; Node 24), known package issue, commands to run bef
 **Manual verification** (`npm run build && npm run preview`, desktop + owner's phone): each tool
 end to end with a real PDF; password-protected input rejected with the Decrypt link in all five other tools,
 restriction-only input accepted;
-size limit error and phone warning; theme toggle persists without flash; direct load of every tool
+size limit errors (computer and phone); theme toggle persists without flash; direct load of every tool
 URL; home page loads no `.wasm`; PWA: service worker active, `qpdf*.wasm` precached, offline reload
 of a tool page and a successful run offline.
 

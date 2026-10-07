@@ -38,24 +38,27 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 | Compress: smaller result with sizes, download is smaller and a valid 5-page PDF, second pass → "No smaller version" without a download, protected input → Decrypt link | `e2e/compress.spec.ts` |
 | Info: plain PDF details, restriction badges, Linearized badge, protected input → Decrypt link | `e2e/info.spec.ts` |
 | No `type="password"` input anywhere; password fields masked and carry the password-manager opt-outs | `e2e/password-fields.spec.ts` |
+| Phones (narrow touch screen): files over the phone limit are refused with "On phones, files must be … Use a computer for bigger files."; a computer accepts the same file | `e2e/phone.spec.ts` |
+| A job cut off by a page reload is explained once after the reload ("The page reloaded while a file was being processed…"), and a finished job leaves no notice | `e2e/phone.spec.ts` |
 | Offline: service worker active and wasm cached, then with the server stopped `/info` and `/decrypt` load and decrypting works (Chromium and WebKit) | `e2e/offline.spec.ts` |
 
 ## Owner checks
 
 Only a person can check these. Tick each box after checking it.
 
-- [ ] Screenshots in `test-results/screenshots/` (light and dark, 375 px and 1280 px) look right and match the old app's style.
-- [ ] The favicon (dark tile, white document, open padlock) shows in a real browser tab, in light and dark browser themes.
-- [ ] Encrypt `plain.pdf` with password `secret` and printing unticked: your PDF viewer asks for `secret` and blocks printing.
-- [ ] Type a password in Decrypt and in Encrypt and submit: neither the browser nor your password manager offers to save it.
-- [ ] Open every tool once in your everyday browser (if it isn't Chrome): it works the same.
-- [ ] After a new build, open the app once (online), close every tab, then reopen it → the new version appears.
-- [ ] Inspect one real-world PDF of your own in Info → no crash; missing fields are simply left out.
+- [x] Screenshots in `test-results/screenshots/` (light and dark, 375 px and 1280 px) look right and match the old app's style.
+- [x] The favicon (dark tile, white document, open padlock) shows in a real browser tab, in light and dark browser themes.
+- [x] Encrypt `plain.pdf` with password `secret` and printing unticked: your PDF viewer asks for `secret` and blocks printing.
+- [x] Type a password in Decrypt and in Encrypt and submit: neither the browser nor your password manager offers to save it.
+- [x] Open every tool once in your everyday browser (if it isn't Chrome): it works the same.
+- [x] After a new build, open the app once (online), close every tab, then reopen it → the new version appears.
+- [x] Inspect one real-world PDF of your own in Info → no crash; missing fields are simply left out.
 
 Phone (deploy `dist/` somewhere with HTTPS; `npm run preview -- --host` on the same Wi-Fi works for the non-offline checks):
 
-- [ ] Add to Home Screen → opens full-screen with the padlock icon.
-- [ ] Encrypt a ~100 MB PDF: works, or the memory message appears (if it fails, tell Claude to lower the limits).
-- [ ] Encrypt a ~250 MB PDF: works, or the memory message appears (same).
-- [ ] Airplane mode → open from the home screen → Decrypt works.
+- [x] Add to Home Screen → opens full-screen with the padlock icon.
+- [x] Encrypt a ~100 MB PDF: works, or the memory message appears (if it fails, tell Claude to lower the limits).
+- [ ] Encrypt `.private/fixtures/big-150mb.pdf` and `big-200mb.pdf` on your phone and tell Claude which works (sets the phone limit; ~245 MB reloads the page on an iPhone 17).
+- [ ] On your phone, a file over the phone limit shows "On phones, files must be … or less in total" and the button stays disabled.
+- [x] Airplane mode → open from the home screen → Decrypt works.
 - [ ] Every box above is ticked.
