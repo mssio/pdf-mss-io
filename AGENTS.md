@@ -78,8 +78,9 @@ public/favicon.svg        source of every icon (`npm run icons` regenerates the 
 
 ## PWA notes
 
-- `vite-plugin-pwa` (`vite.config.ts`) uses `registerType: 'autoUpdate'`: a new deployment activates
-  on the next online launch, with no update prompt.
+- `vite-plugin-pwa` (`vite.config.ts`) uses `registerType: 'prompt'` with no prompt UI (`registerSW({ immediate: true })`
+  without callbacks). A new deployment is used after every tab of the app has been closed and the app is
+  opened again; open pages are never reloaded.
 - Workbox precaches `**/*.{js,css,html,svg,png,ico,wasm,webmanifest}` with
   `maximumFileSizeToCacheInBytes: 3_000_000`. qpdf's wasm is ~2.2 MB; if an asset grows past 3 MB the
   build fails. Raise the limit deliberately, never drop the wasm from the precache.

@@ -152,6 +152,7 @@ Remove its password with Decrypt first." with a "Go to Decrypt" link. Merge name
 | Dropped non-PDF | File must be a PDF. |
 | Size over limit | Files must be 250 MB or less in total (you selected X). |
 | `PasswordProtectedError` | This PDF is password-protected. Remove its password with Decrypt first. (+ link) |
+| `UnreadablePdfError` (Merge names the file) | “name.pdf” isn't a readable PDF. |
 | `INVALID_PASSWORD` in Decrypt | Incorrect password. Check it and try again. |
 | `INVALID_PDF` | This file isn't a readable PDF. |
 | `getQpdf()` rejects (phase `load`) | Couldn't load the PDF engine. Check your connection and reload. |
@@ -216,8 +217,8 @@ Same form and copy as before except:
   accessible, with aria-labels). No drag-to-reorder library.
 - Total size and file count shown under the list; size policy applies to the total.
 - "Merge" enabled with ≥ 2 files. Each file is checked with `ensureNoOpenPassword` in list order;
-  the first password-protected one is named in the error. Then `merge(files)`.
-- Result note: "N files, P pages." (P from `info(output)`). If any input was restriction-only, an
+  the first password-protected one is named in the error. An empty input → “name.pdf” is empty. Then `merge(files)`.
+- Result note: "N files, P pages." (P = sum of the inputs' page counts). If any input was restriction-only, an
   `Alert` adds: "Restrictions from the original files aren't kept in the merged PDF."
 
 ### Extract pages (`/extract`)
@@ -242,7 +243,7 @@ Same form and copy as before except:
 - Password-protected input → `PasswordProtectedError` (shared rule); restriction-only input is shown.
 - Data: `PdfInfo` from `ensureNoOpenPassword` for PDF version and page count; `run(["--json",
   "--json-key=pages", "--json-key=encrypt", "--json-key=attachments", "--json-key=qpdf", "in.pdf"])` (exit 0 or 3 = success);
-  `run(["--check-linearization", "in.pdf"])` exit 0 → linearized. `parseQpdfJson` extracts:
+  `run(["--check-linearization", "in.pdf"])`: linearized when stdout contains "no linearization errors" (qpdf exits 0 either way). `parseQpdfJson` extracts:
   - Document info from the trailer `/Info` object (`qpdf[1]["obj:<ref>"].value`): Title, Author,
     Subject, Keywords, Creator, Producer, CreationDate, ModDate. Strings are `u:`-prefixed in qpdf
     JSON v2 (`b:` binary strings are skipped); dates parsed from `D:YYYYMMDDHHmmSS[Z|±HH'mm']`.
@@ -259,8 +260,9 @@ Same form and copy as before except:
 
 ## 5. PWA and offline
 
-- `vite-plugin-pwa`, `generateSW`, `registerType: "autoUpdate"`, registered from `main.tsx` via
-  `virtual:pwa-register`.
+- `vite-plugin-pwa`, `generateSW`, `registerType: "prompt"` with no prompt UI, registered from `main.tsx` via
+  `virtual:pwa-register`. New deployments are used after every tab of the app has been closed and
+  it is opened again; open pages are never reloaded.
 - Manifest: name and short_name "PDF Toolbox", `display: "standalone"`, `start_url: "/"`,
   `theme_color` and `background_color` `#ffffff`.
 - Icons generated from `public/favicon.svg` by `@vite-pwa/assets-generator` (minimal 2023 preset):

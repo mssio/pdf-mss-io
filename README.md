@@ -50,6 +50,8 @@ shadcn/ui (new-york) on Radix, `@mssio/qpdf-wasm`, `vite-plugin-pwa`, Vitest 5.
 
 `dist/` is static. Any web server or static host works if it does three things:
 
+The app must be served from the domain root (`https://example.com/`), not a sub-path; `start_url` and `scope` are `/`.
+
 1. **Falls back to `index.html`** for unknown paths, so `/decrypt` loads on a direct visit or refresh.
 2. Serves `.wasm` as `application/wasm` (fastest compile; other types still work).
 3. Sends `Cache-Control: no-cache` for `index.html` and `sw.js` so updates are picked up.
@@ -68,6 +70,9 @@ location /assets/      { add_header Cache-Control "public, max-age=31536000, imm
 # Add it there if missing. Don't put a separate types {} block here; it replaces the whole MIME map.
 ```
 
+nginx `add_header` inside a `location` replaces headers set at `server` level (for example a
+CSP); repeat them there if you use both.
+
 **Netlify / Cloudflare Pages:** add `public/_redirects` containing `/*  /index.html  200`.
 
 **Caddy**
@@ -80,17 +85,17 @@ example.com {
 }
 ```
 
-**GitHub Pages:** copy `dist/index.html` to `dist/404.html` after building.
+**GitHub Pages:** copy `dist/index.html` to `dist/404.html` after building. Use a user/organization site or a custom domain, since project sites live under `/repo/`.
 
 **Content-Security-Policy:** if you set one, allow `script-src 'self' 'wasm-unsafe-eval'` plus the
-inline theme script in `index.html` (by its `sha256-` hash, or `'unsafe-inline'`), and
-`worker-src 'self'`. Without the theme script allowance the page still works but flashes the wrong
+inline theme script in `index.html` (by its `sha256-` hash, or `'unsafe-inline'`), `worker-src 'self'`, and
+`connect-src 'self'` (needed to fetch the wasm). Without the theme script allowance the page still works but flashes the wrong
 theme on load.
 
 ## Offline
 
 The service worker precaches the whole app, including the qpdf worker and `.wasm` (about 2.7 MB in total),
-after the first online visit. New deployments activate the next time the app opens online.
+after the first online visit. A new deployment is used after every tab of the app has been closed and the app is opened again; open pages are never reloaded.
 
 ## Adding a tool
 

@@ -79,7 +79,7 @@ Run `npm run build && npm run preview` and open http://localhost:4173 in Chrome.
 - [ ] Application → Manifest: name "PDF Toolbox", icons shown, no installability errors.
 - [ ] Network → Offline, then reload `/decrypt` directly → the page loads, and decrypting `protected.pdf` works.
 - [ ] Offline, `/info` also loads and works.
-- [ ] Back online: after a new build, two reloads show the new version (auto-update).
+- [ ] Back online: after a new build, close every tab of the app and reopen it → the new version appears.
 
 ## Task 12: Final checks (ready)
 
