@@ -20,15 +20,18 @@ test("files append, reorder and remove; merge keeps the chosen order", async ({ 
   await expect(rows(page).first()).toContainText("two-pages.pdf");
   await page.getByRole("button", { name: "Merge", exact: true }).click();
   await expect(page.getByText("2 files, 7 pages.")).toBeVisible();
+  await expect(page.getByText("Restrictions from the original files aren't kept in the merged PDF.")).toHaveCount(0);
   const file = await download(page, "Download merged PDF");
   expect(file.filename).toBe("merged.pdf");
   expect(await inspectPdf(file.path)).toMatchObject({ pageCount: 7, encrypted: false, firstPageSize: "A4" });
 });
 
-test("restricted inputs get a note that restrictions are dropped", async ({ page }) => {
+test("restricted inputs get a note that restrictions are dropped, and the output is unencrypted", async ({ page }) => {
   await chooseFiles(page, "plain.pdf", "restricted.pdf");
   await page.getByRole("button", { name: "Merge", exact: true }).click();
   await expect(page.getByText("Restrictions from the original files aren't kept in the merged PDF.")).toBeVisible();
+  const file = await download(page, "Download merged PDF");
+  expect(await inspectPdf(file.path)).toMatchObject({ pageCount: 7, encrypted: false });
 });
 
 test("problem files are named, and the error clears when the file is removed", async ({ page }) => {

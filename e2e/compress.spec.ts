@@ -1,7 +1,8 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 
-import { chooseFiles, download } from "./helpers";
+import { chooseFiles, download, inspectPdf } from "./helpers";
+import { fixture } from "./paths";
 
 test("compresses, and a second pass reports no smaller version", async ({ page }) => {
   await page.goto("/compress");
@@ -11,6 +12,8 @@ test("compresses, and a second pass reports no smaller version", async ({ page }
   await expect(page.getByText(/ → .*(−\d+%|less than 1% smaller)/)).toBeVisible();
   const file = await download(page, "Download compressed PDF");
   expect(file.filename).toBe("plain-compressed.pdf");
+  expect((await stat(file.path)).size).toBeLessThan((await stat(fixture("plain.pdf"))).size);
+  expect(await inspectPdf(file.path)).toMatchObject({ pageCount: 5, encrypted: false });
 
   await page.getByRole("button", { name: "Compress another file" }).click();
   // Playwright saves downloads under a random name, so re-upload under the real one.
