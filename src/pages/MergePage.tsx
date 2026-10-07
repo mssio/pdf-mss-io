@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { CardContent, CardFooter } from "@/components/ui/card";
 import { formatBytes } from "@/lib/format";
 import { checkSize, isLikelyPhone, totalBytes } from "@/lib/limits";
-import { mergeListReducer, toMergeItems } from "@/lib/merge-list";
+import { mergeListReducer, toMergeItems, type MergeAction } from "@/lib/merge-list";
 import { assertOutput, ensureNoOpenPassword, logWarnings } from "@/lib/qpdf";
 import { useBlobUrl } from "@/lib/use-blob-url";
 import { useQpdfJob } from "@/lib/use-qpdf-job";
@@ -32,20 +32,32 @@ export function Component() {
     job.clearError();
   }
 
+  function changeList(action: MergeAction) {
+    dispatch(action);
+    job.clearError();
+  }
+
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (items.length < 2 || !sizeCheck.ok) return;
     const files = items.map((item) => item.file);
+    const empty = files.find((file) => file.size === 0);
+    if (empty) {
+      job.fail(`“${empty.name}” is empty.`);
+      return;
+    }
     const merged = await job.run(async (qpdf) => {
       let droppedRestrictions = false;
+      let pages = 0;
       for (const file of files) {
-        if ((await ensureNoOpenPassword(qpdf, file)).encrypted) droppedRestrictions = true;
+        const info = await ensureNoOpenPassword(qpdf, file);
+        if (info.encrypted) droppedRestrictions = true;
+        pages += info.pageCount;
       }
       const { output, warnings } = await qpdf.merge(files);
       assertOutput(output);
       logWarnings(warnings);
-      const { pageCount } = await qpdf.info(output.slice());
-      return { output, summary: { files: files.length, pages: pageCount, droppedRestrictions } };
+      return { output, summary: { files: files.length, pages, droppedRestrictions } };
     });
     if (merged) {
       result.show(merged.output, "merged.pdf");
@@ -106,7 +118,7 @@ export function Component() {
                       size="icon-sm"
                       aria-label={`Move ${item.file.name} up`}
                       disabled={job.busy || index === 0}
-                      onClick={() => dispatch({ type: "move", id: item.id, offset: -1 })}
+                      onClick={() => changeList({ type: "move", id: item.id, offset: -1 })}
                     >
                       <ArrowUp />
                     </Button>
@@ -116,7 +128,7 @@ export function Component() {
                       size="icon-sm"
                       aria-label={`Move ${item.file.name} down`}
                       disabled={job.busy || index === items.length - 1}
-                      onClick={() => dispatch({ type: "move", id: item.id, offset: 1 })}
+                      onClick={() => changeList({ type: "move", id: item.id, offset: 1 })}
                     >
                       <ArrowDown />
                     </Button>
@@ -126,7 +138,7 @@ export function Component() {
                       size="icon-sm"
                       aria-label={`Remove ${item.file.name}`}
                       disabled={job.busy}
-                      onClick={() => dispatch({ type: "remove", id: item.id })}
+                      onClick={() => changeList({ type: "remove", id: item.id })}
                     >
                       <X />
                     </Button>

@@ -27,6 +27,17 @@ export class PasswordProtectedError extends Error {
   }
 }
 
+/** Thrown when an input isn't a readable PDF, so Merge can name the file. */
+export class UnreadablePdfError extends Error {
+  readonly fileName: string;
+
+  constructor(fileName: string) {
+    super(`${fileName} isn't a readable PDF`);
+    this.name = "UnreadablePdfError";
+    this.fileName = fileName;
+  }
+}
+
 /** qpdf "succeeded" but returned no usable PDF (seen when the wasm runs out of memory on large inputs). */
 export class TruncatedOutputError extends Error {
   constructor() {
@@ -50,7 +61,9 @@ export async function ensureNoOpenPassword(qpdf: Qpdf, file: File): Promise<PdfI
   try {
     return await qpdf.info(file);
   } catch (error) {
-    if (qpdfCode(error) === "INVALID_PASSWORD") throw new PasswordProtectedError(file.name);
+    const code = qpdfCode(error);
+    if (code === "INVALID_PASSWORD") throw new PasswordProtectedError(file.name);
+    if (code === "INVALID_PDF") throw new UnreadablePdfError(file.name);
     throw error;
   }
 }
@@ -86,6 +99,11 @@ export function describeQpdfError(
   if (error instanceof PasswordProtectedError) {
     const subject = options.nameFiles ? `“${error.fileName}”` : "This PDF";
     return { message: `${subject} is password-protected. Remove its password with Decrypt first.`, decryptFirst: true };
+  }
+  if (error instanceof UnreadablePdfError) {
+    return {
+      message: options.nameFiles ? `“${error.fileName}” isn't a readable PDF.` : "This file isn't a readable PDF.",
+    };
   }
   if (error instanceof TruncatedOutputError) return { message: OUT_OF_MEMORY_MESSAGE };
   const code = qpdfCode(error);

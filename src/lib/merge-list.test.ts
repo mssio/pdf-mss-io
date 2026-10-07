@@ -7,8 +7,9 @@ let counter = 0;
 const nextId = () => `id-${++counter}`;
 const names = (items: MergeItem[]) => items.map((item) => item.file.name);
 
+const a = file("a.pdf");
+
 describe("mergeListReducer", () => {
-  const a = file("a.pdf");
   const b = file("b.pdf");
   const c = file("c.pdf");
   const start = toMergeItems([a, b, c], nextId);
@@ -55,5 +56,12 @@ describe("mergeListReducer", () => {
     const removed = mergeListReducer(start, { type: "remove", id: start[0].id });
     const readded = mergeListReducer(removed, { type: "add", items: toMergeItems([a], nextId) });
     expect(names(readded)).toEqual(["b.pdf", "c.pdf", "a.pdf"]);
+  });
+});
+
+describe("toMergeItems", () => {
+  test("default ids are distinct, even for the same file", () => {
+    const [first, second] = toMergeItems([a, a]);
+    expect(first.id).not.toBe(second.id);
   });
 });

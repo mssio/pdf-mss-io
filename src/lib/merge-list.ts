@@ -6,7 +6,9 @@ export type MergeAction =
   | { type: "remove"; id: string }
   | { type: "clear" };
 
-export function toMergeItems(files: File[], makeId: () => string = () => crypto.randomUUID()): MergeItem[] {
+let nextId = 0;
+
+export function toMergeItems(files: File[], makeId: () => string = () => `file-${++nextId}`): MergeItem[] {
   return files.map((file) => ({ id: makeId(), file }));
 }
 

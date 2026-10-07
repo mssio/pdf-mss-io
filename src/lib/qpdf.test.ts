@@ -7,6 +7,7 @@ import {
   OUT_OF_MEMORY_MESSAGE,
   PasswordProtectedError,
   TruncatedOutputError,
+  UnreadablePdfError,
 } from "@/lib/qpdf";
 
 const pdfBytes = (length: number) => {
@@ -39,6 +40,14 @@ describe("describeQpdfError", () => {
     expect(describeQpdfError(error, "run", { nameFiles: true })).toEqual({
       message: "“tax.pdf” is password-protected. Remove its password with Decrypt first.",
       decryptFirst: true,
+    });
+  });
+
+  test("unreadable file, unnamed and named", () => {
+    const error = new UnreadablePdfError("notes.pdf");
+    expect(describeQpdfError(error, "run")).toEqual({ message: "This file isn't a readable PDF." });
+    expect(describeQpdfError(error, "run", { nameFiles: true })).toEqual({
+      message: "“notes.pdf” isn't a readable PDF.",
     });
   });
 
