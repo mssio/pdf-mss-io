@@ -13,8 +13,8 @@ export function AppShell() {
       <header className="sticky top-0 z-50 border-b border-border/80 bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2 font-semibold tracking-tight text-foreground">
-            <img src="/favicon.svg" alt="PDF" width={32} height={32} className="size-8 rounded-lg dark:ring-1 dark:ring-border" />
-            <span className="hidden sm:inline">Toolbox</span>
+            <img src="/favicon.svg" alt="" width={32} height={32} className="size-8 rounded-lg dark:ring-1 dark:ring-border" />
+            <span>PDF Toolbox</span>
           </Link>
           <nav className="flex items-center gap-1 sm:gap-2">
             <Button variant="ghost" size="sm" asChild>

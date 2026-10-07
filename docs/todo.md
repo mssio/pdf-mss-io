@@ -20,7 +20,7 @@ Also keep one real-world PDF of your own handy.
 
 ## Task 1: App shell (ready)
 
-- [ ] Header shows the padlock logo (same as the favicon) + "Toolbox", Home link and a theme toggle button; the logo stays visible in dark mode.
+- [ ] Header shows the padlock logo (same as the favicon) + "PDF Toolbox", Home link and a theme toggle button; the logo stays visible in dark mode, and the header fits on a 375 px wide window.
 - [ ] Footer reads "PDFs are processed locally in your browser. Nothing is uploaded."
 - [ ] Theme toggle switches light/dark; the choice survives a reload with no flash of the wrong theme.
 - [ ] With no saved choice, the app follows the system light/dark setting.
