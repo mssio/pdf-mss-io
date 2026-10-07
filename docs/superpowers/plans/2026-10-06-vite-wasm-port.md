@@ -5104,19 +5104,22 @@ git push
 ### Task 17: Phone limit, crash notice, job status and stuck-engine safeguard (done)
 
 Added after the owner's iPhone 17 tests on 2026-10-07 (spec sections 3 and 11). Implemented test-first
-as an owner-approved bounded change (commits `a8e2c65`, `757cf45` and the job-status commit), each reviewed.
+as owner-approved bounded changes, each reviewed: `a8e2c65`/`757cf45` (phone limit + crash notice),
+`d7ff4db` (job status + time limit + 250 MB phone limit), and the review fixes that split the engine-load
+and job limits into `runWithTimeLimits`.
 
 **Files:**
-- Create: `src/lib/crash-guard.ts`, `src/components/CrashNotice.tsx`, `src/components/JobStatus.tsx`, `e2e/phone.spec.ts`, `e2e/job-safeguard.spec.ts`, `src/lib/crash-guard.test.ts`
+- Create: `src/lib/crash-guard.ts`, `src/lib/run-job.ts`, `src/components/CrashNotice.tsx`, `src/components/JobStatus.tsx`, `e2e/phone.spec.ts`, `e2e/job-safeguard.spec.ts`, `src/lib/crash-guard.test.ts`, `src/lib/run-job.test.ts`
 - Modify: `src/lib/limits.ts` (+ test), `src/lib/qpdf.ts` (+ tests), `src/lib/use-qpdf-job.ts`, `src/components/SizeNotice.tsx`, `src/components/AppShell.tsx`, all six pages, `e2e/global-setup.ts`, README, AGENTS.md, docs/todo.md
 
 **Interfaces (produced):**
 - `PHONE_MAX_BYTES` (250 MB), `checkSize(total, likelyPhone): { ok: true } | { ok: false; message }`, `isLikelyPhone()` (small touch screen in either orientation, or deviceMemory ≤ 4)
 - `markJobStarted`, `markJobFinished`, `hadCrashedJob`, `clearCrashedJob` (optional `Storage` argument, per-storage running-job count)
-- `resetQpdf(): void`, `class JobTimeoutError`, `jobTimeoutMs(totalBytes): number`
-- `useQpdfJob().run(job, { label?, sizeBytes? })`, `useQpdfJob().status: JobStatusState | null`; `<JobStatus status={job.status} />` in every tool's footer
+- `resetQpdf(): void`, `class JobTimeoutError`, `jobTimeoutMs(totalBytes)`, `ENGINE_LOAD_TIMEOUT_MS`
+- `runWithTimeLimits({ load, job, loadMs, jobMs, onRun })`, `class EngineLoadTimeoutError`
+- `useQpdfJob().run(job, { label, sizeBytes })` (both required), `useQpdfJob().status: JobStatusState | null`; `<JobStatus status={job.status} />` in every tool's footer
 
-- [x] **Step 1: Unit tests first (RED), then `limits.ts`, `crash-guard.ts` and the `qpdf.ts` additions (GREEN)**
+- [x] **Step 1: Unit tests first (RED), then the library code (GREEN)**
 
 `src/lib/limits.ts`:
 
@@ -5228,9 +5231,67 @@ export function clearCrashedJob(storage: Storage | undefined = defaultStorage())
 }
 ```
 
-`src/lib/qpdf.ts` additions:
+`src/lib/run-job.ts`:
 
 ```ts
+import { JobTimeoutError } from "@/lib/qpdf";
+
+/** The PDF engine didn't finish loading within its own time limit. */
+export class EngineLoadTimeoutError extends Error {
+  constructor() {
+    super("The PDF engine didn't load in time");
+    this.name = "EngineLoadTimeoutError";
+  }
+}
+
+type TimeLimitedRun<E, T> = {
+  load: () => Promise<E>;
+  job: (engine: E) => Promise<T>;
+  loadMs: number;
+  jobMs: number;
+  /** Called once the engine has loaded and the job starts. */
+  onRun: () => void;
+};
+
+/**
+ * Loads the engine, then runs the job, each under its own time limit. A load that finishes after its
+ * limit never starts the job; a job's late failure after its limit is swallowed.
+ */
+export async function runWithTimeLimits<E, T>({ load, job, loadMs, jobMs, onRun }: TimeLimitedRun<E, T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = (ms: number, error: Error) =>
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(error), ms);
+    });
+  try {
+    const engine = await Promise.race([load(), limit(loadMs, new EngineLoadTimeoutError())]);
+    clearTimeout(timer);
+    onRun();
+    const work = job(engine);
+    work.catch(() => {}); // if the time limit wins, the job's late failure must not surface as unhandled
+    return await Promise.race([work, limit(jobMs, new JobTimeoutError())]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+```
+
+`src/lib/qpdf.ts` changes:
+
+```ts
+export function getQpdf(): Promise<Qpdf> {
+  if (!pending) {
+    const loading: Promise<Qpdf> = import("@mssio/qpdf-wasm")
+      .then((module) => module.createQpdf())
+      .catch((error: unknown) => {
+        if (pending === loading) pending = null; // a dropped engine failing late must not forget a newer one
+        throw error;
+      });
+    pending = loading;
+  }
+  return pending;
+}
+
 /**
  * Drops the current engine so the next getQpdf() starts a fresh one. Used when a job never answers
  * (a frozen or killed worker): never waits for the old engine, terminates it if it ever loads.
@@ -5252,13 +5313,20 @@ export class JobTimeoutError extends Error {
   }
 }
 
-/** Generous time allowed for one job: 1 minute plus 1 minute per started 25 MB of input. */
+/** Time allowed for the engine to load (first visit: ~2.6 MB over the network). */
+export const ENGINE_LOAD_TIMEOUT_MS = 120_000;
+
+/**
+ * Generous time allowed for one job once the engine is loaded: 2 minutes plus 2 minutes per started
+ * 25 MB of input (245 MB → 22 minutes). Sized well above an iPhone 17's real timings so slower or
+ * throttled phones aren't cut off; it only catches a worker that never answers.
+ */
 export function jobTimeoutMs(totalBytes: number): number {
-  return 60_000 + Math.ceil(totalBytes / (25 * 1024 * 1024)) * 60_000;
+  return 120_000 + Math.ceil(totalBytes / (25 * 1024 * 1024)) * 120_000;
 }
 ```
 
-`describeQpdfError` maps `JobTimeoutError` (in either phase) to "This file took too long to process on this device. It may be too big for its memory. Try a smaller file or a computer."
+`describeQpdfError` maps `JobTimeoutError` (in either phase) to "This file took too long to process on this device. It may be too big for its memory. Try a smaller file or a computer."; an `EngineLoadTimeoutError` arrives in the load phase and gets "Couldn't load the PDF engine. Check your connection and reload."
 
 - [x] **Step 2: E2E first (RED: `e2e/phone.spec.ts`, `e2e/job-safeguard.spec.ts`), then the hook and components (GREEN)**
 
@@ -5271,6 +5339,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { markJobFinished, markJobStarted } from "@/lib/crash-guard";
 import {
   describeQpdfError,
+  ENGINE_LOAD_TIMEOUT_MS,
   type ErrorDescription,
   getQpdf,
   type JobPhase,
@@ -5278,21 +5347,23 @@ import {
   jobTimeoutMs,
   resetQpdf,
 } from "@/lib/qpdf";
+import { EngineLoadTimeoutError, runWithTimeLimits } from "@/lib/run-job";
 
 /** What a running job is doing, for JobStatus. */
 export type JobStatusState = { phase: JobPhase; label: string; startedAt: number; sizeBytes: number };
 
 export type RunOptions = {
   /** Step shown while qpdf works, e.g. "Encrypting…". */
-  label?: string;
+  label: string;
   /** Total input size; sets the time limit (jobTimeoutMs) and the large-file hint. */
-  sizeBytes?: number;
+  sizeBytes: number;
 };
 
 /**
  * Busy, status and error state for one qpdf job at a time. Results that arrive after reset() or
- * unmount are dropped, so a slow job can't overwrite a newer screen. A job that runs past
- * jobTimeoutMs() fails with JobTimeoutError and the (presumably stuck) engine is replaced.
+ * unmount are dropped, so a slow job can't overwrite a newer screen. An engine that doesn't load within
+ * ENGINE_LOAD_TIMEOUT_MS, or a job that runs past jobTimeoutMs(), fails with a clear message and the
+ * (presumably stuck) engine is replaced.
  */
 export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) {
   const [busy, setBusy] = useState(false);
@@ -5308,34 +5379,31 @@ export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) 
   );
 
   const run = useCallback(
-    async <T>(job: (qpdf: Qpdf) => Promise<T>, { label = "Working…", sizeBytes = 0 }: RunOptions = {}): Promise<T | null> => {
+    async <T>(job: (qpdf: Qpdf) => Promise<T>, { label, sizeBytes }: RunOptions): Promise<T | null> => {
       const id = ++generation.current;
       const startedAt = Date.now();
       setBusy(true);
       setError(null);
       setStatus({ phase: "load", label, startedAt, sizeBytes });
       let phase: JobPhase = "load";
-      let timer: ReturnType<typeof setTimeout> | undefined;
       markJobStarted();
       try {
-        const work = (async () => {
-          const qpdf = await getQpdf();
-          phase = "run";
-          if (id === generation.current) setStatus({ phase: "run", label, startedAt, sizeBytes });
-          return job(qpdf);
-        })();
-        work.catch(() => {}); // if the time limit wins, a late failure must not surface as unhandled
-        const timeout = new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new JobTimeoutError()), jobTimeoutMs(sizeBytes));
+        const result = await runWithTimeLimits({
+          load: getQpdf,
+          job,
+          loadMs: ENGINE_LOAD_TIMEOUT_MS,
+          jobMs: jobTimeoutMs(sizeBytes),
+          onRun: () => {
+            phase = "run";
+            if (id === generation.current) setStatus({ phase: "run", label, startedAt, sizeBytes });
+          },
         });
-        const result = await Promise.race([work, timeout]);
         return id === generation.current ? result : null;
       } catch (caught) {
-        if (caught instanceof JobTimeoutError) resetQpdf();
+        if (caught instanceof JobTimeoutError || caught instanceof EngineLoadTimeoutError) resetQpdf();
         if (id === generation.current) setError(describeQpdfError(caught, phase, { nameFiles }));
         return null;
       } finally {
-        clearTimeout(timer);
         markJobFinished();
         if (id === generation.current) {
           setBusy(false);
@@ -5388,7 +5456,9 @@ export function JobStatus({ status }: { status: JobStatusState | null }) {
   return (
     <div role="status" aria-live="polite" className="grid gap-0.5 text-sm text-muted-foreground">
       <p className="tabular-nums">
-        {step} {formatElapsed(now - status.startedAt)}
+        {step}{" "}
+        {/* Not announced: a live region that changes every second would drown out screen readers. */}
+        <span aria-hidden="true">{formatElapsed(now - status.startedAt)}</span>
       </p>
       {status.sizeBytes > LARGE_FILE_BYTES ? <p className="text-xs">Large files can take a few minutes on phones.</p> : null}
     </div>
@@ -5438,7 +5508,7 @@ export function CrashNotice() {
 
 - [x] **Step 3: Verify**
 
-`npx tsc -b && npm run lint && npm test && npm run test:e2e` → lint clean, 135 unit tests, 48 Playwright tests (twice), no stray `vite preview`.
+`npx tsc -b && npm run lint && npm test && npm run test:e2e` → lint clean, 141 unit tests, 48 Playwright tests (twice), no stray `vite preview`.
 
 ---
 

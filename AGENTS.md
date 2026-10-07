@@ -56,8 +56,10 @@ playwright.config.ts      E2E config: vite preview :4173, chromium all specs, we
   before showing `output` as a download).
 - Run jobs through `useQpdfJob().run(async (qpdf) => …, { label: "Encrypting…", sizeBytes })`; it maps
   errors with `describeQpdfError`, ignores results after `reset()` or unmount, shows the step via
-  `<JobStatus status={job.status} />`, and fails a job that runs past `jobTimeoutMs(sizeBytes)` with
-  `JobTimeoutError`, replacing the stuck engine (`resetQpdf()`). Always pass the real input size.
+  `<JobStatus status={job.status} />`, and enforces two limits via `runWithTimeLimits` (`src/lib/run-job.ts`): the engine must load within
+  `ENGINE_LOAD_TIMEOUT_MS`, and the job must finish within `jobTimeoutMs(sizeBytes)` counted from then;
+  on either timeout the stuck engine is replaced (`resetQpdf()`). `label` and `sizeBytes` are required:
+  always pass the real input size.
 - Call `assertOutput(output)` on every output before it becomes a download. qpdf can "succeed" with
   a near-empty file when the wasm runs out of memory (seen with encrypt at 600 MB).
 - Log `warnings` with `logWarnings`; don't show them.

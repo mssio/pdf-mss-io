@@ -27,7 +27,7 @@ that referred to the server changes.
 | PDF engine | `@mssio/qpdf-wasm` **1.0.0** (qpdf 12.4.2). It owns the Web Worker; the app does not write its own. |
 | Password-protected input | **Only Decrypt accepts PDFs that need a password to open.** Every other tool rejects them and points to Decrypt. PDFs that open without a password but carry owner restrictions ("restriction-only") are accepted by every tool. No password fields outside Decrypt. |
 | Offline | PWA via `vite-plugin-pwa`: installable, works offline after the first online visit. |
-| Size policy | 250 MB combined input hard limit for every tool; warning above 100 MB on phones (section 3). |
+| Size policy | 250 MB combined input hard limit for every tool, on computers and phones (phones have their own constant, `PHONE_MAX_BYTES`, so it can be lowered); see section 3 and section 11. |
 | UI library | shadcn only (no Catalyst / other kits). Old look kept; added shadcn `checkbox`, `alert`, `badge`, `separator`. Non-error notices use `Alert`. |
 | Versions | Latest stable of every package (section 1), verified to build, lint and test together on 2026-10-06. |
 | Runtime | Node 24 LTS (`.nvmrc` = `24`, `engines.node` = `>=24`). Node 25 is end-of-life and Vitest 5 doesn't support it. |
@@ -414,21 +414,26 @@ manual list shrinks to about 9 items and the same checks run on every future cha
 **Status while a job runs** (`src/components/JobStatus.tsx`, state from `useQpdfJob`):
 - Below the busy submit button, one muted line with the step and the elapsed time (m:ss, updated
   every second): "Loading the PDF engine… 0:03" while `getQpdf()` loads, then the tool's step label
-  ("Decrypting…", "Encrypting…", "Merging…", "Extracting pages…", "Compressing…", "Inspecting…").
+  ("Decrypting…", "Encrypting…", "Merging…", "Counting pages…" / "Extracting pages…", "Compressing…",
+  "Inspecting…"). The m:ss is `aria-hidden` so the live region only announces step changes.
 - For inputs over 50 MB it adds: "Large files can take a few minutes on phones."
 - No percentage: `@mssio/qpdf-wasm` 1.0.0 returns qpdf's output only when a job ends. A real progress
   bar needs an `onProgress` option in the package (owner's follow-up, see docs/todo.md "After 1.0.0").
 
-**Safeguard** (`useQpdfJob` + `src/lib/qpdf.ts`):
-- Each job gets `jobTimeoutMs(totalBytes) = 60 s + 60 s per started 25 MB` (a 245 MB job: 11 min).
-- If the time runs out (a dead or frozen worker never answers — seen on iPhone), the job fails with
-  `JobTimeoutError` → "This file took too long to process on this device. It may be too big for its
-  memory. Try a smaller file or a computer."
-- The stuck engine is dropped with `resetQpdf()` (terminate it without waiting; the next
-  `getQpdf()` creates a fresh one), so later jobs in the same tab work.
-- Tests: unit tests for `jobTimeoutMs`, `resetQpdf` and the message; a Playwright test that hangs the
-  engine (its worker script never loads), fast-forwards the page clock past the time limit, checks the
-  message, then lets the worker load and checks the next job succeeds.
+**Safeguard** (`src/lib/run-job.ts` `runWithTimeLimits`, used by `useQpdfJob`; `src/lib/qpdf.ts`):
+- Loading the engine and running the job have separate limits. Loading: `ENGINE_LOAD_TIMEOUT_MS`
+  (2 minutes) → `EngineLoadTimeoutError` → "Couldn't load the PDF engine. Check your connection and
+  reload." Running: `jobTimeoutMs(totalBytes) = 2 min + 2 min per started 25 MB` (245 MB: 22 min),
+  counted from when the engine has loaded → `JobTimeoutError` → "This file took too long to process on
+  this device. It may be too big for its memory. Try a smaller file or a computer."
+- An engine that loads after its limit never starts the job; a job's late failure is swallowed.
+- On either timeout the engine is dropped with `resetQpdf()` (terminate without waiting; the next
+  `getQpdf()` creates a fresh one). A dropped engine that fails later never clears the newer one.
+- Tests: `runWithTimeLimits` unit tests with fake timers (both limits, late load, late failure);
+  `jobTimeoutMs`, `resetQpdf` and the messages unit-tested; a Playwright test that hangs the engine (its
+  worker script never loads), fast-forwards the page clock past the load limit, checks the message, then
+  lets the worker load and checks the next job succeeds. The limits are generous on purpose; the owner
+  records the real iPhone time for a 200 MB encrypt (docs/todo.md) to confirm the margin.
 
 ## Out of scope
 
