@@ -34,7 +34,7 @@ that referred to the server changes.
 | Package manager | npm. |
 | E2E tests | Playwright against the production build (`vite preview`), run locally with `npm run test:e2e` (no CI). Chromium runs every spec; WebKit runs the offline spec only. See section 9. |
 | Password fields | No `<input type="password">` anywhere. Password inputs use `SecretInput` (masked text field + password-manager ignore attributes) so neither the browser nor a password manager offers to save them. See section 10. |
-| Release | The app ships as **version 1.0.0**: `package.json` `version` is `1.0.0`, `CHANGELOG.md` has a 1.0.0 entry, `main` is tagged `v1.0.0`, and a GitHub release `v1.0.0` carries `pdf-toolbox-1.0.0.zip` (the built `dist/`). See section 8. |
+| Release | The app ships as **version 1.0.0**: `package.json` `version` is `1.0.0`, `CHANGELOG.md` has a 1.0.0 entry, `main` is tagged `v1.0.0`. No GitHub release and no built zip (owner decision, 2026-10-07: the tag and changelog mark the version; the owner builds from the tag). See section 8. |
 
 Verified with throwaway probes against the real package (Node, 2026-10-06), using valid PDFs, first
 with 0.1.0 and again with **1.0.0** (same API and byte-identical `qpdf.wasm`; only `engines.node` rose to `>=24`):
@@ -341,9 +341,12 @@ Browser-level behavior is covered by the Playwright suite in section 9.
   spec file that covers it, and "Owner checks" boxes for what needs a person. The release does not
   start until `npm run test:e2e` passes and every owner box is ticked.
 - Release steps (each needs the owner's go-ahead, since they publish or touch `main`): open a PR from
-  `port-vite-wasm` to `main`; after it merges, tag the merge commit `v1.0.0` and push the tag; build
-  `dist/`, zip it as `pdf-toolbox-1.0.0.zip`, and create the GitHub release `v1.0.0` with the
-  changelog entry as notes and the zip attached.
+  `port-vite-wasm` to `main`; after it merges, tag the merge commit `v1.0.0` and push the tag. No
+  GitHub release or built zip (owner decision, 2026-10-07); to deploy, build from the tag
+  (`git checkout v1.0.0 && npm ci && npm run build`).
+- After the release, `docs/todo.md` drops the ticked owner checks and keeps the automated-checks table
+  and the "After 1.0.0" follow-ups.
+- Done 2026-10-07: PR #1 merged (`fcd51ef`), tag `v1.0.0` pushed.
 
 ## 9. End-to-end tests (Playwright)
 

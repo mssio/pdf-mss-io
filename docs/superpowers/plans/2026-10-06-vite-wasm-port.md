@@ -23,7 +23,7 @@
 | 15 | Tool specs + screenshots | 39 Playwright tests across six tools; 28 screenshots | Haiku 4.5 | ~25 min |
 | 16 | Docs + owner checklist | todo split into automated table + 10 owner boxes; README/AGENTS | Haiku 4.5 | ~15 min |
 | 17 | Phone limit, crash notice, job status, stuck-engine safeguard (done) | 250 MB phone limit, reload notice, step + timer, job time limit with engine reset | Opus 5.5 (controller) | done |
-| 18 | Release 1.0.0 | CHANGELOG, PR to `main`, tag `v1.0.0`, GitHub release with `dist` zip | Sonnet 5.5 + owner approvals | ~15 min agent, ~5 min owner |
+| 18 | Release 1.0.0 (done) | CHANGELOG, PR to `main`, tag `v1.0.0` (no GitHub release, by owner decision) | Sonnet 5.5 + owner approvals | ~15 min agent, ~5 min owner |
 
 **Total:** about 7.25 hours of agent time (Tasks 1–12 are done; Tasks 13–17 add about 1.6 hours). Subagent-driven execution adds a reviewer pass per task
 (about 10 minutes each, Opus 5.5). Model choice: Opus 5.5 for tasks that define interfaces other
@@ -5531,7 +5531,7 @@ export function CrashNotice() {
 
 Steps 2–4 publish or change `main`. **Ask the owner before each one** and wait for a yes.
 
-- [ ] **Step 0: Owner checks gate**
+- [x] **Step 0: Owner checks gate** (done: 48 E2E passed, all owner boxes ticked)
 
 The release starts only when the automated checks pass **and** every owner box in `docs/todo.md` is ticked:
 
@@ -5542,7 +5542,7 @@ grep -n -- '- \[ \]' docs/todo.md && echo "STOP: unticked owner checks" || echo 
 
 Expected: Playwright all green, then `all owner checks ticked`. Otherwise stop and report the failures or the unticked lines to the owner.
 
-- [ ] **Step 1: Changelog**
+- [x] **Step 1: Changelog** (done: `7b84bcb`)
 
 `CHANGELOG.md`:
 
@@ -5583,7 +5583,7 @@ Claude-Session: https://claude.ai/code/session_01NvYC5VwsQMEVA9j9Scdfc1"
 git push
 ```
 
-- [ ] **Step 2: Pull request to `main` (owner approval)**
+- [x] **Step 2: Pull request to `main` (owner approval)** (done: PR #1, merged by the owner as `fcd51ef`)
 
 ```bash
 gh pr create --base main --head port-vite-wasm --title "PDF Toolbox 1.0.0: static Vite + WASM app" --body "$(cat <<'EOF'
@@ -5603,7 +5603,7 @@ EOF
 
 The owner reviews and merges the PR (or approves a merge with `gh pr merge --merge`).
 
-- [ ] **Step 3: Tag `v1.0.0` on `main` (owner approval)**
+- [x] **Step 3: Tag `v1.0.0` on `main` (owner approval)** (done: annotated tag on `fcd51ef`, pushed)
 
 ```bash
 git switch main
@@ -5613,7 +5613,7 @@ git tag -a v1.0.0 -m "PDF Toolbox 1.0.0"
 git push origin v1.0.0
 ```
 
-- [ ] **Step 4: GitHub release with the built site (owner approval)**
+- [x] **Step 4: GitHub release with the built site (owner approval)** — skipped by owner decision (2026-10-07): no GitHub release or zip; the tag and `CHANGELOG.md` mark the version, and deployments build from the tag.
 
 ```bash
 rm -rf dist && npm ci && npm run build
@@ -5626,7 +5626,7 @@ rm pdf-toolbox-1.0.0.zip
 Expected: `gh release view v1.0.0` lists `pdf-toolbox-1.0.0.zip`. Unzipping it gives `index.html`,
 `sw.js`, `manifest.webmanifest` and `assets/` with `qpdf-*.wasm`; that folder is what the owner hosts.
 
-- [ ] **Step 5: Clean up the owner checklist (after the release)**
+- [x] **Step 5: Clean up the owner checklist (after the release)** (done on branch `post-release-1.0.0-cleanup`, merged via PR)
 
 Once the GitHub release exists, rewrite `docs/todo.md` to keep only what's still open: drop every
 ticked owner box and the release-gate intro, keep the "Automated checks" table (it documents the E2E
