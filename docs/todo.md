@@ -54,3 +54,53 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 
   Then, in this repo: upgrade to `@mssio/qpdf-wasm@^1.1.0`, pass `onProgress` from `useQpdfJob`, show a
   percentage bar in `JobStatus`, and use "no progress for N seconds" for the stuck-engine time limit.
+
+## Planned for 1.2.0: Images to PDF
+
+A seventh tool: pick several images, put them in order, get one PDF. It all runs on the device, works
+offline and uploads nothing. qpdf can't turn images into pages, so a small builder in `src/lib/` writes
+the PDF. qpdf then only tidies the result.
+
+**Decide in the spec first** (brainstorm → `docs/superpowers/specs/`). Suggested defaults:
+
+- **Inputs:** JPEG, PNG and WebP. Refuse HEIC/HEIF with "Convert it to JPEG first": only Safari can
+  decode it, and a wasm decoder is too heavy for the precache. GIF: first frame only, or refuse.
+- **JPEG:** embed the bytes as they are (`DCTDecode`), with no re-encoding and no quality loss. Read the
+  EXIF orientation and rotate the page to match, or phone photos come out sideways.
+- **Other formats:** decode with `createImageBitmap` and a canvas, then store the pixels losslessly
+  (Flate via `CompressionStream`). Keep transparency with an `SMask`, or flatten onto white (decide).
+- **Page size:** one choice on the page, either "Fit to A4" (default, with margins, portrait or
+  landscape per image) or "Same size as the image". Letter only if someone asks.
+- **Order:** reuse the Merge list (`src/lib/merge-list.ts`: append, move up/down, remove, keyboard
+  path).
+- **Builder:** hand-written (like `imageHeavyPdf()` in the qpdf-wasm repo) rather than `pdf-lib`, which
+  would add ~200 KB to the precache. Revisit if the edge cases pile up.
+- **After building:** run the output through `qpdf.compress()` (object streams), with `onProgress` from
+  1.1.0, then `assertOutput()`, as for every download.
+- **Limits:** the total size is checked against `MAX_TOTAL_BYTES` / `PHONE_MAX_BYTES`. Decoded pixels
+  can be far larger than the file (a 12 MP photo is ~48 MB as RGBA), so decode one image at a time and
+  free each bitmap (`bitmap.close()`) before the next.
+- **Output name:** `images.pdf`, or the first image's name with `.pdf`.
+
+**Build** (AGENTS.md "Adding a tool"):
+
+1. `src/lib/images-to-pdf.ts` + tests (TDD), a pure builder taking `{ bytes, kind, width, height,
+   orientation }[]` and a page size, returning PDF bytes. Also `src/lib/image-files.ts` + tests: detect
+   the type from the magic bytes, not the extension, and read the JPEG size and EXIF orientation.
+   Valid output is checked with `inspectPdf()`.
+2. An image dropzone. Generalize `PdfFileDropzone` (accept list + messages) or add `ImageFileDropzone`.
+3. `src/pages/ImagesToPdfPage.tsx`, a registry entry in `src/tools.ts` (lucide `Images` icon), then
+   the shell copy and tests that say "six tools", and AGENTS.md "What this is".
+4. Integration test: a built PDF through `qpdf.compress()` in `src/lib/qpdf.integration.test.ts`.
+5. `e2e/images-to-pdf.spec.ts`: JPEG + PNG + WebP in a chosen order → page count, order and page
+   sizes checked with `inspectPdf()`, HEIC refused, non-image refused, rotated JPEG gives a landscape
+   page. Add it to the offline spec's tool list and the 375 px overflow check.
+6. `npm run build`: the new chunk is in `dist/sw.js`'s precache.
+7. CHANGELOG `## 1.2.0`, `package.json` version.
+
+**Owner checks for 1.2.0** (tick before release):
+
+- [ ] 10 photos from an iPhone (shared as JPEG) → one PDF; pages upright, in order, sharp.
+- [ ] Same on an Android phone, in Chrome.
+- [ ] A screenshot PNG with transparency looks right.
+- [ ] Works offline after one online visit (airplane mode, installed PWA).
