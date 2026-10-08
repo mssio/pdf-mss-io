@@ -114,6 +114,6 @@ after the first online visit. A new deployment is downloaded the next time the a
 
 ## Release checks
 
-Release 1.0.0 needs `npm run test:e2e` to pass and every owner box in [docs/todo.md](docs/todo.md) ticked.
+A release needs `npm run test:e2e` to pass and every owner check in [docs/todo.md](docs/todo.md) ticked. 1.0.0 is tagged `v1.0.0`; to deploy a version, build it from its tag (`git checkout v1.0.0 && npm ci && npm run build`) and host `dist/`.
 
 See [AGENTS.md](AGENTS.md) for the rules the code follows.
