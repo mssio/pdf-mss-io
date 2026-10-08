@@ -38,19 +38,8 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 | A job cut off by a page reload is explained once after the reload ("The page reloaded while a file was being processed…"), and a finished job leaves no notice | `e2e/phone.spec.ts` |
 | Offline: service worker active and wasm cached, then with the server stopped `/info` and `/decrypt` load and decrypting works (Chromium and WebKit) | `e2e/offline.spec.ts` |
 
-## After 1.0.0 (not part of the release gate)
+## Next versions
 
-- **Real progress bar** (owner, in the `qpdf-wasm` repo, then here): give this prompt to Claude in the
-  `@mssio/qpdf-wasm` repo:
-
-  > In `@mssio/qpdf-wasm`, add streaming progress. Give every helper's options and `run()`'s options an
-  > optional `onProgress?: (percent: number) => void`. When it's set, run qpdf with `--progress`, parse
-  > each stdout line matching `/write progress: (\d+)%/` as Emscripten prints it (don't wait for the job
-  > to end), and post `{ type: "progress", id, percent }` from the worker to the main thread. The
-  > pool/executor forwards these to that job's callback; inline (Node) mode calls it directly. Keep
-  > progress lines out of `RunResult.stdout`, don't call the callback after the job settles or after
-  > `terminate()`, and keep the API backward compatible. Add unit and browser tests (percent values
-  > rise from 0 to 100 for a large encrypt) and README docs, and release it as **1.1.0**.
-
-  Then, in this repo: upgrade to `@mssio/qpdf-wasm@^1.1.0`, pass `onProgress` from `useQpdfJob`, show a
-  percentage bar in `JobStatus`, and use "no progress for N seconds" for the stuck-engine time limit.
+Plans live in `docs/notes/`: [1.1.0](notes/1.1.0-plan.md) (real progress bar) and
+[1.2.0](notes/1.2.0-plan.md) (page grid, Organize, images in Merge). When a release starts, copy its
+owner checks here as unticked boxes; this file stays the release gate.
