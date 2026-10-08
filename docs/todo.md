@@ -55,52 +55,159 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
   Then, in this repo: upgrade to `@mssio/qpdf-wasm@^1.1.0`, pass `onProgress` from `useQpdfJob`, show a
   percentage bar in `JobStatus`, and use "no progress for N seconds" for the stuck-engine time limit.
 
-## Planned for 1.2.0: Images to PDF
+## Planned for 1.2.0: page grid, Organize, images in Merge
 
-A seventh tool: pick several images, put them in order, get one PDF. It all runs on the device, works
-offline and uploads nothing. qpdf can't turn images into pages, so a small builder in `src/lib/` writes
-the PDF. qpdf then only tidies the result.
+One shared **page grid** (a thumbnail per page; select, reorder, rotate, delete) used by three tools:
 
-**Decide in the spec first** (brainstorm → `docs/superpowers/specs/`). Suggested defaults:
+- **Merge**, which also takes images;
+- **Extract**;
+- a new **Organize** tool.
 
-- **Inputs:** JPEG, PNG and WebP. Refuse HEIC/HEIF with "Convert it to JPEG first": only Safari can
-  decode it, and a wasm decoder is too heavy for the precache. GIF: first frame only, or refuse.
-- **JPEG:** embed the bytes as they are (`DCTDecode`), with no re-encoding and no quality loss. Read the
-  EXIF orientation and rotate the page to match, or phone photos come out sideways.
-- **Other formats:** decode with `createImageBitmap` and a canvas, then store the pixels losslessly
-  (Flate via `CompressionStream`). Keep transparency with an `SMask`, or flatten onto white (decide).
-- **Page size:** one choice on the page, either "Fit to A4" (default, with margins, portrait or
-  landscape per image) or "Same size as the image". Letter only if someone asks.
-- **Order:** reuse the Merge list (`src/lib/merge-list.ts`: append, move up/down, remove, keyboard
-  path).
-- **Builder:** hand-written (like `imageHeavyPdf()` in the qpdf-wasm repo) rather than `pdf-lib`, which
-  would add ~200 KB to the precache. Revisit if the edge cases pile up.
-- **After building:** run the output through `qpdf.compress()` (object streams), with `onProgress` from
-  1.1.0, then `assertOutput()`, as for every download.
-- **Limits:** the total size is checked against `MAX_TOTAL_BYTES` / `PHONE_MAX_BYTES`. Decoded pixels
-  can be far larger than the file (a 12 MP photo is ~48 MB as RGBA), so decode one image at a time and
-  free each bitmap (`bitmap.close()`) before the next.
-- **Output name:** `images.pdf`, or the first image's name with `.pdf`.
+Everything still runs on the device, works offline and uploads nothing. Write the spec first (brainstorm →
+`docs/superpowers/specs/`). Below are the decisions so far and the suggested defaults.
 
-**Build** (AGENTS.md "Adding a tool"):
+### Libraries (checked with Context7 and npm on 2026-10-08)
 
-1. `src/lib/images-to-pdf.ts` + tests (TDD), a pure builder taking `{ bytes, kind, width, height,
-   orientation }[]` and a page size, returning PDF bytes. Also `src/lib/image-files.ts` + tests: detect
-   the type from the magic bytes, not the extension, and read the JPEG size and EXIF orientation.
-   Valid output is checked with `inspectPdf()`.
-2. An image dropzone. Generalize `PdfFileDropzone` (accept list + messages) or add `ImageFileDropzone`.
-3. `src/pages/ImagesToPdfPage.tsx`, a registry entry in `src/tools.ts` (lucide `Images` icon), then
-   the shell copy and tests that say "six tools", and AGENTS.md "What this is".
-4. Integration test: a built PDF through `qpdf.compress()` in `src/lib/qpdf.integration.test.ts`.
-5. `e2e/images-to-pdf.spec.ts`: JPEG + PNG + WebP in a chosen order → page count, order and page
-   sizes checked with `inspectPdf()`, HEIC refused, non-image refused, rotated JPEG gives a landscape
-   page. Add it to the offline spec's tool list and the 375 px overflow check.
-6. `npm run build`: the new chunk is in `dist/sw.js`'s precache.
-7. CHANGELOG `## 1.2.0`, `package.json` version.
+- **PDF.js (`pdfjs-dist`): add.** qpdf can't draw pages, and PDF.js is the only realistic in-browser
+  renderer. Apache-2.0, latest 6.4.299 (2026-10-03); pin an exact version.
+  - **Sizes:** `pdf.min.mjs` 459 KB and `pdf.worker.min.mjs` 1.26 MB, both under the 3 MB precache limit.
+  - **Precache these wasm decoders:**
+    - `openjpeg.wasm` 251 KB (JPEG 2000 images);
+    - `jbig2.wasm` 104 KB (scanned documents);
+    - `qcms_bg.wasm` 97 KB (colour profiles).
+  - **Leave out:**
+    - `quickjs-eval.wasm` 469 KB (form scripts);
+    - `pdf.sandbox`;
+    - the `*_nowasm_fallback.js` files.
+  - **Fonts and character maps:** leave out `standard_fonts/` (816 KB) and `cmaps/` (1.6 MB) at first. Pages
+    with non-embedded fonts or CJK text then show a substitute font in the thumbnail. The spec decides
+    whether thumbnails need `standard_fonts/`; adding them means adding font extensions to the Workbox glob.
+  - **Setup:** pass the worker and wasm locations as Vite `?url` imports
+    (`GlobalWorkerOptions.workerSrc`, `wasmUrl`). Render at a target width
+    (`scale = width / page.getViewport({ scale: 1 }).width`).
+  - **Loading:** load it lazily on grid pages only. The home page must still load no `.wasm`
+    (`shell.spec.ts`).
+- **Drag to reorder: `@dnd-kit/react`, kept inside `PageGrid`.** Three options were compared:
+  - `@dnd-kit/react` 0.5.0 (maintained, MIT): grids, `KeyboardSensor` and screen-reader announcements
+    built in.
+  - Legacy `@dnd-kit/core` 6.3.1 + `@dnd-kit/sortable` 10.0.0: stable, but no release since 2024-12.
+  - `@hello-pangea/dnd`: strong accessibility, but single-direction lists only, so no multi-row grid.
 
-**Owner checks for 1.2.0** (tick before release):
+  Pick `@dnd-kit/react`, pinned exact because it is still 0.x. Only `PageGrid` imports it, so a swap
+  touches one file. It is a toolkit, not a component kit, so "shadcn only" still holds; note it in
+  AGENTS.md. Drag is a bonus: move buttons and the keyboard path (as the Merge list has today) stay the
+  primary way, and e2e tests use them.
+- **Images → PDF: no library.**
+  - `pdf-lib` would cover it but has had no release since 2022 (1.17.1).
+  - A small hand-written builder is enough. It embeds JPEG as-is (`DCTDecode`). Other formats are
+    decoded with `createImageBitmap` and a canvas, then stored with Flate (`CompressionStream`).
+  - qpdf does the final assembly, so the builder only makes one-page PDFs.
 
-- [ ] 10 photos from an iPhone (shared as JPEG) → one PDF; pages upright, in order, sharp.
+### Applying a page plan with qpdf (verified 2026-10-08, qpdf-wasm 1.0.0)
+
+A plan is a list of `{ file, page, rotation }`. One qpdf run applies it:
+
+```
+--empty --pages a.pdf 3 b.pdf 1 a.pdf 1 -- --rotate=+90:1 --rotate=+180:3 out.pdf
+```
+
+Pages from several files interleave in any order, and `--rotate=…:N` uses the **output** page number.
+Encryption rules stay as they are:
+
+- **Merge:** output is never encrypted (`--empty`).
+- **Extract and Organize:** use the source file instead of `--empty`, so the owner restrictions stay.
+
+Run it through `qpdf.run()` with `onProgress` (from 1.1.0), then `assertOutput()`.
+
+### Shared pieces
+
+- **`src/lib/page-plan.ts` + tests** (pure):
+  - the plan model;
+  - move, rotate and delete;
+  - plan → qpdf args.
+- **`src/components/PageGrid.tsx`:**
+  - thumbnails about 150 px wide, rendered only when they scroll into view (`IntersectionObserver`), one
+    or two at a time;
+  - each canvas is turned into an image and freed, followed by `page.cleanup()`;
+  - rotation shown with a CSS transform (no re-render);
+  - per page: select, move (buttons, keyboard, drag), rotate left/right, delete.
+
+  Try `content-visibility: auto` for long documents before adding a virtualization library.
+- **Phones:** a 300-page PDF must stay responsive, so use small scale and few concurrent renders.
+
+### The tools
+
+- **Merge, renamed "Merge PDFs & images":**
+  - **Inputs:** PDFs plus JPEG, PNG and WebP. Each image becomes a one-page PDF first.
+  - **Grid:** shows every page of every input; the user arranges, then downloads.
+  - **Single image:** allowed on its own (one photo → one PDF).
+  - **Password check:** `ensureNoOpenPassword` runs on PDFs only.
+  - **Keep:** the `/merge` URL.
+  - **Discoverability:** consider an "Images to PDF" home card that links to `/merge`. The spec decides
+    whether `src/tools.ts` gets an alias entry for it.
+- **Extract:**
+  - **Picking pages:** in the grid; the output is the selected pages in grid order, with their
+    rotations.
+  - **Range box:** stays, and edits the same selection (`page-ranges.ts`). For long documents typing
+    "1-50" beats clicking.
+  - **Restrictions:** kept.
+- **Organize (new, `/organize`):**
+  - **What it does:** one PDF; reorder, rotate and delete pages, then download all remaining pages.
+  - **Restrictions:** kept.
+  - **Rules:** like every tool except Decrypt, it refuses PDFs that need a password to open.
+  - **Later:** if Extract and Organize turn out nearly identical, consider folding Extract into
+    Organize.
+
+### Images (inside Merge)
+
+- **Accepted types:** JPEG, PNG and WebP, detected from the magic bytes, not the extension.
+- **HEIC/HEIF:** refused with "Convert it to JPEG first" (only Safari decodes it).
+- **GIF:** first frame only, or refuse (decide).
+- **JPEG:** embedded without re-encoding. Read the EXIF orientation and rotate the page to match, or
+  phone photos come out sideways.
+- **Transparent PNG/WebP:** keep with an `SMask`, or flatten onto white (decide).
+- **Page size:**
+  - "Fit to A4" (default, with margins, portrait or landscape per image);
+  - or "Same size as the image".
+- **Memory:** a 12 MP photo is about 48 MB once decoded, so decode one image at a time and call
+  `bitmap.close()` before the next.
+- **Size limits:** the total size still counts against `MAX_TOTAL_BYTES` / `PHONE_MAX_BYTES`.
+
+### Build order (one commit each, TDD, per AGENTS.md "Adding a tool")
+
+1. **Libraries:**
+   - add `pdfjs-dist` and `@dnd-kit/react` (exact versions);
+   - ship the three wasm decoders with the build;
+   - after `npm run build`, confirm the PDF.js worker and wasm are in `dist/sw.js`'s precache list and
+     the home page still loads no wasm.
+2. **Page plan:** `page-plan.ts` + tests, plus integration tests in `src/lib/qpdf.integration.test.ts`:
+   - interleave two files;
+   - rotate by output page;
+   - restrictions kept for Organize and Extract, none for Merge.
+3. **Image helpers:** `image-files.ts` (type sniffing, JPEG size and EXIF orientation) and
+   `images-to-pdf.ts` (one-page PDFs), with tests; check outputs with `inspectPdf()`.
+4. **`PageGrid`:** with thumbnails, the move/rotate/delete actions and the keyboard path.
+5. **Organize:** page, registry entry, `e2e/organize.spec.ts`.
+6. **Extract:** moved onto the grid; update `e2e/extract.spec.ts` (grid and range box agree).
+7. **Merge:** moved onto the grid, with images and the rename; update `e2e/merge.spec.ts`:
+   - mixed PDF + JPEG + PNG in a chosen order;
+   - rotated JPEG → landscape page;
+   - HEIC and non-images refused.
+8. **Shell and docs:**
+   - "six tools" → seven in the shell copy and tests;
+   - add `/organize` to the offline and 375 px checks;
+   - AGENTS.md: "What this is", the map, the libraries;
+   - CHANGELOG `## 1.2.0`, `package.json` version.
+
+If 1.2.0 runs long, split it: grid + Organize/Extract/Merge in 1.2.0, images in Merge in 1.3.0.
+
+### Owner checks for 1.2.0 (tick before release)
+
+- [ ] 10 photos from an iPhone (shared as JPEG) → Merge → one PDF; pages upright, in order, sharp.
 - [ ] Same on an Android phone, in Chrome.
 - [ ] A screenshot PNG with transparency looks right.
-- [ ] Works offline after one online visit (airplane mode, installed PWA).
+- [ ] A 300-page PDF in Organize on a phone: thumbnails appear while scrolling, the page stays responsive.
+- [ ] A reordered and rotated PDF opens correctly in Preview/Acrobat and in a phone's PDF viewer.
+- [ ] Merge with a PDF and photos mixed: pages in the arranged order.
+- [ ] Drag to reorder works with a mouse and with touch; the move buttons work with a screen reader.
+- [ ] Works offline after one online visit (airplane mode, installed PWA), including thumbnails.
