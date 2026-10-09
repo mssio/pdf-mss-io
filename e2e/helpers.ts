@@ -81,25 +81,38 @@ export async function recordedProgress(page: Page): Promise<RecordedProgress> {
 /**
  * Delivers the PDF engine's messages in order, waiting `gapMs` after each progress message, so a fast
  * write reports progress several times a second for a few seconds (like a big file on a slow device).
+ * With `burstBelow`, progress messages below that percent are held and delivered together with the
+ * first one at or above it, in one task, the way a phone sees qpdf's first burst of small objects.
  * Call before page.goto.
  */
-export async function spaceOutProgress(page: Page, gapMs: number): Promise<void> {
-  await page.addInitScript((gap) => {
-    const native = Object.getOwnPropertyDescriptor(Worker.prototype, "onmessage")!;
-    Object.defineProperty(Worker.prototype, "onmessage", {
-      configurable: true,
-      get() {
-        return native.get!.call(this);
-      },
-      set(handler: ((event: MessageEvent) => void) | null) {
-        let queue = Promise.resolve();
-        native.set!.call(this, (event: MessageEvent) => {
-          queue = queue.then(async () => {
-            handler?.call(this, event);
-            if (event.data?.type === "progress") await new Promise((resolve) => setTimeout(resolve, gap));
+export async function spaceOutProgress(page: Page, { gapMs, burstBelow = 0 }: { gapMs: number; burstBelow?: number }): Promise<void> {
+  await page.addInitScript(
+    ({ gap, below }) => {
+      const native = Object.getOwnPropertyDescriptor(Worker.prototype, "onmessage")!;
+      Object.defineProperty(Worker.prototype, "onmessage", {
+        configurable: true,
+        get() {
+          return native.get!.call(this);
+        },
+        set(handler: ((event: MessageEvent) => void) | null) {
+          let queue = Promise.resolve();
+          let held: MessageEvent[] = [];
+          native.set!.call(this, (event: MessageEvent) => {
+            const isProgress = event.data?.type === "progress";
+            if (isProgress && event.data.percent < below) {
+              held.push(event);
+              return;
+            }
+            const batch = [...held, event];
+            held = [];
+            queue = queue.then(async () => {
+              for (const message of batch) handler?.call(this, message);
+              if (isProgress) await new Promise((resolve) => setTimeout(resolve, gap));
+            });
           });
-        });
-      },
-    });
-  }, gapMs);
+        },
+      });
+    },
+    { gap: gapMs, below: burstBelow },
+  );
 }

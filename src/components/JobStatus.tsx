@@ -41,13 +41,30 @@ export function JobStatus({ status }: { status: JobStatusState | null }) {
       </div>
       {status.percent !== null ? (
         // Outside the live region: screen readers can query the bar, but percentages aren't announced.
-        <div className="flex items-center gap-2">
-          <Progress value={status.percent} aria-label={status.label} className="flex-1" />
-          <span aria-hidden="true" className="w-9 text-right text-xs tabular-nums">
-            {status.percent}%
-          </span>
-        </div>
+        <ProgressRow percent={status.percent} label={status.label} />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The bar and qpdf's percent. The bar mounts at 0 and takes each value on the next animation frame,
+ * so it slides in (and glides on, via the indicator's transition) instead of appearing mid-way.
+ */
+function ProgressRow({ percent, label }: { percent: number; label: string }) {
+  const [shown, setShown] = useState(0);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setShown(percent));
+    return () => cancelAnimationFrame(frame);
+  }, [percent]);
+
+  return (
+    <div className="flex items-center gap-2">
+      <Progress value={shown} aria-label={label} className="flex-1" />
+      <span aria-hidden="true" className="w-9 text-right text-xs tabular-nums">
+        {percent}%
+      </span>
     </div>
   );
 }

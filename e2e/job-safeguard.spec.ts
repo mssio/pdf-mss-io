@@ -89,11 +89,53 @@ test("encrypting shows a rising progress bar, then the result", async ({ page })
 });
 
 test("the elapsed time keeps ticking while progress arrives several times a second", async ({ page }) => {
-  await spaceOutProgress(page, 50); // 100 percents over ~5 s
+  await spaceOutProgress(page, { gapMs: 50 }); // 100 percents over ~5 s
   await page.goto("/compress");
   await chooseFiles(page, "twenty-mb.pdf");
   await page.getByRole("button", { name: "Compress", exact: true }).click();
   await expect(page.getByRole("progressbar")).toBeVisible();
   await expect(page.getByText(/^Compressing… 0:0[2-9]$/)).toBeVisible({ timeout: 4_000 });
   await expect(page.getByText("Your PDF is smaller")).toBeVisible();
+});
+
+/** Starts a Compress whose progress lasts ~5 s and returns the bar's fill once it shows. */
+async function compressWithVisibleBar(page: Page) {
+  await spaceOutProgress(page, { gapMs: 50 });
+  await page.goto("/compress");
+  await chooseFiles(page, "twenty-mb.pdf");
+  await page.getByRole("button", { name: "Compress", exact: true }).click();
+  const fill = page.locator('[data-slot="progress-indicator"]');
+  await expect(fill).toBeVisible();
+  return fill;
+}
+
+test("the bar glides to each new value", async ({ page }) => {
+  const fill = await compressWithVisibleBar(page);
+  const transition = await fill.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { property: style.transitionProperty, seconds: parseFloat(style.transitionDuration) };
+  });
+  expect(transition.property).toContain("transform");
+  expect(transition.seconds).toBeGreaterThanOrEqual(0.5);
+});
+
+test.describe("with Reduce Motion on", () => {
+  test.use({ reducedMotion: "reduce" });
+
+  test("the bar doesn't animate", async ({ page }) => {
+    const fill = await compressWithVisibleBar(page);
+    expect(await fill.evaluate((element) => getComputedStyle(element).transitionProperty)).toBe("none");
+  });
+});
+
+test("a bar whose first progress arrives in a burst slides in from 0", async ({ page }) => {
+  await recordProgress(page);
+  await spaceOutProgress(page, { gapMs: 20, burstBelow: 36 }); // 0–35% land in one frame, as on the iPhone
+  await page.goto("/compress");
+  await chooseFiles(page, "twenty-mb.pdf");
+  await page.getByRole("button", { name: "Compress", exact: true }).click();
+  await expect(page.getByText("Your PDF is smaller")).toBeVisible();
+  const { values } = await recordedProgress(page);
+  expect(values[0]).toBe(0);
+  expect(values[1]).toBeGreaterThanOrEqual(35);
 });
