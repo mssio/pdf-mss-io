@@ -20,6 +20,13 @@ describe("isIosSafari", () => {
     expect(isIosSafari(IPHONE_EDGE, 5)).toBe(false);
   });
 
+  test("in-app and other iOS browsers whose menus differ from Safari's get no Safari steps", () => {
+    const withToken = (token: string) => IPHONE_SAFARI.replace("Mobile/15E148", `Mobile/15E148 ${token}`);
+    for (const token of ["GSA/391.0.791237612", "OPT/6.0.0", "Ddg/26.0", "YaBrowser/25.8.0", "FBAN/FBIOS", "Instagram 380.0", "Line/15.0"])
+      expect(isIosSafari(withToken(token), 5), token).toBe(false);
+    expect(isIosSafari(IPHONE_SAFARI.replace("Version/26.0", "OPiOS/16.0"), 5)).toBe(false);
+  });
+
   test("an iPad reports a Mac user agent but has touch; a real Mac doesn't", () => {
     expect(isIosSafari(MAC_SAFARI, 5)).toBe(true);
     expect(isIosSafari(MAC_SAFARI, 0)).toBe(false);

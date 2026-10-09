@@ -467,8 +467,9 @@ The offline app only works reliably once it is on the home screen and has finish
   - not already running as an installed app (`matchMedia("(display-mode: standalone)")` or
     `navigator.standalone`);
   - an install path exists here: a captured `beforeinstallprompt` (Android), or iOS Safari (iPhone/iPod
-    user agent, or an iPad reporting a Mac user agent with touch; not `CriOS`/`FxiOS`/`EdgiOS`, whose
-    menus differ from the screenshots);
+    user agent, or an iPad reporting a Mac user agent with touch; not other iOS browsers or in-app
+    browsers — Chrome, Firefox, Edge, Opera, DuckDuckGo, Yandex, the Google app, Facebook, Instagram, LINE —
+    whose menus differ from the screenshots; Brave can't be told apart);
   - "Not now" wasn't tapped in the last 30 days;
   - no job is running and no result is on screen (`job-activity`, like the update dialog).
 - Placement: a slim card under the header, above `CrashNotice`, on every page except `/install/…`.

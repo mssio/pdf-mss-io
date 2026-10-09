@@ -2,10 +2,16 @@
 export const INSTALL_DISMISS_MS = 30 * 24 * 60 * 60 * 1000;
 const KEY = "pdf-mss-io-install-dismissed";
 
-/** Safari on iPhone/iPod/iPad (iPads report a Mac user agent but have touch); not Chrome/Firefox/Edge on iOS. */
+/**
+ * Safari on iPhone/iPod/iPad (iPads report a Mac user agent but have touch). Other iOS browsers and in-app
+ * browsers (Google app, Facebook, Instagram, …) have different menus than the screenshots, so they're left
+ * out. Brave sends Safari's exact user agent and can't be told apart.
+ */
+const NOT_SAFARI = /CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|GSA\/|DuckDuckGo|Ddg\/|YaBrowser|FBAN|FBIOS|Instagram|Line\//;
+
 export function isIosSafari(userAgent: string, maxTouchPoints: number): boolean {
   const ios = /iPhone|iPod|iPad/.test(userAgent) || (/Macintosh/.test(userAgent) && maxTouchPoints > 1);
-  return ios && /Safari\//.test(userAgent) && !/CriOS|FxiOS|EdgiOS/.test(userAgent);
+  return ios && /Safari\//.test(userAgent) && !NOT_SAFARI.test(userAgent);
 }
 
 /** Which banner to show, if any (spec section 10). */
