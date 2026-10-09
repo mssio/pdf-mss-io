@@ -5,7 +5,7 @@ every operation runs locally with [qpdf](https://github.com/qpdf/qpdf) compiled 
 ([`@mssio/qpdf-wasm`](https://www.npmjs.com/package/@mssio/qpdf-wasm)). The build is plain static
 files, and the app installs as a PWA that works offline after the first visit.
 
-Current version: **1.0.0** ([changelog](CHANGELOG.md)).
+Current version: **1.1.0** ([changelog](CHANGELOG.md)).
 
 ## Tools
 
@@ -102,8 +102,11 @@ theme on load.
 
 ## Offline
 
-The service worker precaches the whole app, including the qpdf worker and `.wasm` (about 2.7 MB in total),
-after the first online visit. A new deployment is downloaded the next time the app is opened online and used once every tab of the app has been closed and it is opened again; open pages are never reloaded.
+The service worker precaches the whole app, including the qpdf worker and `.wasm` (about 2.9 MB in total),
+during the first online visit; the footer shows "Downloading for offline use…" until it says "Ready offline"
+(details at `/offline`). While online, the app checks for a new deployment hourly, when it comes back to the
+foreground and when the device reconnects, then offers "Update available" (never during a job or over a result).
+Hosts must serve `sw.js` and `index.html` with `Cache-Control: no-cache` (or a short CDN cache).
 
 ## Adding a tool
 
@@ -115,6 +118,6 @@ after the first online visit. A new deployment is downloaded the next time the a
 
 ## Release checks
 
-A release needs `npm run test:e2e` to pass and every owner check in [docs/todo.md](docs/todo.md) ticked. 1.0.0 is tagged `v1.0.0`; to deploy a version, build it from its tag (`git checkout v1.0.0 && npm ci && npm run build`) and host `dist/`.
+A release needs `npm run test:e2e` to pass and every owner check in [docs/todo.md](docs/todo.md) ticked. Releases are tagged (`v1.0.0`, `v1.1.0`); to deploy a version, build it from its tag (`git checkout v1.1.0 && npm ci && npm run build`) and host `dist/`.
 
 See [AGENTS.md](AGENTS.md) for the rules the code follows.
