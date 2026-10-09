@@ -172,6 +172,16 @@ Builds served for the owner to try on a device (LAN `vite preview --host`, `tail
 `npm run build:test`: the footer then reads "Version 1.1.0 · test <commit>[-dirty] <YYYY-MM-DD HH:mm:ss>", so a
 cached older build is easy to spot. Release builds use plain `npm run build` (no note).
 
+## `.private/`
+
+Git-ignored scratch space for the owner and agents (screenshots, big test PDFs, notes). Its files are not
+in git, so deleting them can't be undone:
+
+- Never delete anything in `.private/` without asking. When a piece of work is finished, list the files
+  you propose to delete (path and why each is no longer needed) and wait for the owner to confirm.
+- Don't clean up between implementation steps; only once the work is done.
+- Delete with `trash <file>` (macOS, recoverable from the Trash), never `rm`.
+
 ## Workflow
 
 Commit each logical change and push right away on a feature branch, not `main`. Merging to `main`,
