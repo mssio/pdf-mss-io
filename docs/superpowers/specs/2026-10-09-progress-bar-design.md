@@ -55,26 +55,30 @@ Checked against the published 1.1.0 tarball and the package's spec §7
 
 ## 2. Data flow
 
-### `useQpdfJob` (`src/lib/use-qpdf-job.ts`)
+### `useQpdfJob` (`src/lib/use-qpdf-job.ts`) and `src/lib/job-progress.ts`
 
 ```ts
+// src/lib/job-progress.ts (with the pure helpers withProgress and createOnProgress)
 export type JobStatusState = {
   phase: "load" | "run" | "finishing";
   label: string;
   startedAt: number;
   sizeBytes: number;
-  /** Write progress 0–99 once qpdf reports it; null before the first call. */
+  /** Write progress 0–99 once qpdf reports it; null before the first call and again after 100. */
   percent: number | null;
 };
 
+// src/lib/use-qpdf-job.ts
 run<T>(job: (qpdf: Qpdf, onProgress: (percent: number) => void) => Promise<T>, options: RunOptions)
 ```
 
 The `onProgress` built for one `run()`:
 
-1. returns at once if `id !== generation.current` (stale job, or after `reset()` / unmount);
-2. tells the time limiter (`progress(percent)`, section 3);
-3. sets status: `percent < 100` → `{ phase: "run", percent }`; `percent === 100` →
+1. always tells the time limiter (`progress(percent)`, section 3), even for a stale job: a stale job
+   still occupies the shared engine, and if its limit expired, `resetQpdf()` would kill the engine
+   under the job the user started since;
+2. stops there if `id !== generation.current` (stale job, or after `reset()` / unmount);
+3. otherwise sets status: `percent < 100` → `{ phase: "run", percent }`; `percent === 100` →
    `{ phase: "finishing", percent: null }`.
 
 The phase used for error messages (`JobPhase` in `src/lib/qpdf.ts`) stays `"load" | "run"`;
