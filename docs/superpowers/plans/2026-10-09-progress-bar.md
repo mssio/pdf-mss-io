@@ -1185,3 +1185,836 @@ git add src/components/ui/progress.tsx src/components/JobStatus.tsx e2e/job-safe
 git commit -m "feat: progress bar glides between values and slides in from 0"
 git push
 ```
+
+---
+
+## Update prompt (Tasks 8–10, added 2026-10-09)
+
+Spec section 7 is the authority. Goal: while online, the app checks for a newer deployment (hourly, on `online`, and on returning to the foreground at most once a minute). It shows an "Update available" dialog with Later / Update now. After Later, an "Update to the latest version" button sits in the footer. Nothing reloads while a job runs.
+
+**Extra global constraints for Tasks 8–10:**
+- The only new strings, exactly: `Update available`, `A new version of PDF Toolbox is ready. Updating reloads the page, so anything you've chosen here will need to be chosen again.`, `Later`, `Update now`, `Update to the latest version`.
+- `UPDATE_CHECK_INTERVAL_MS = 3_600_000`, `UPDATE_CHECK_MIN_GAP_MS = 60_000`.
+- No new runtime requests besides the `sw.js` check; nothing loaded from a CDN.
+- Port 4173 must be free before `npm run test:e2e`. Stop any test server (`vite preview`, `tailscale serve`) first.
+
+**Review focus (update prompt):**
+1. An update must never reload the page during a job (dialog deferred, footer button disabled, `updateNow()` guarded). Pinned by `shouldShowUpdatePrompt` unit tests and E2E test 2.
+2. An offline device or a down server must never look like an update (`checkForUpdate` only updates on HTTP 200). Pinned by unit tests.
+3. Switching apps repeatedly must not spam `sw.js` requests (60 s gap). Pinned by unit tests.
+4. With service workers blocked (every other E2E spec), the app must still render and work. Pinned by the full E2E suite.
+5. Users on 1.0.0 can't get the dialog (their cached app has none). Documented in the spec's Out of scope, not tested.
+
+---
+
+### Task 8: Update checker and job-activity store
+
+**Files:**
+- Create: `src/lib/update-check.ts`, `src/lib/update-check.test.ts`
+- Create: `src/lib/job-activity.ts`, `src/lib/job-activity.test.ts`
+- Modify: `src/lib/use-qpdf-job.ts`
+
+**Interfaces:**
+- Produces:
+  - `startUpdateChecks(options: UpdateCheckOptions): () => void`
+  - `checkForUpdate(swUrl: string, registration: Pick<ServiceWorkerRegistration, "installing" | "update">, fetchSw?: typeof fetch): Promise<void>`
+  - `shouldShowUpdatePrompt({ updateReady, dismissed, jobRunning }: { updateReady: boolean; dismissed: boolean; jobRunning: boolean }): boolean`
+  - `UPDATE_CHECK_INTERVAL_MS`, `UPDATE_CHECK_MIN_GAP_MS`
+  - `jobStarted()`, `jobFinished()`, `isJobRunning(): boolean`, `subscribeJobActivity(listener: () => void): () => void`
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `src/lib/update-check.test.ts`:
+
+```ts
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+import {
+  checkForUpdate,
+  shouldShowUpdatePrompt,
+  startUpdateChecks,
+  UPDATE_CHECK_INTERVAL_MS,
+  UPDATE_CHECK_MIN_GAP_MS,
+} from "@/lib/update-check";
+
+describe("startUpdateChecks", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function setup() {
+    const win = new EventTarget();
+    const doc = Object.assign(new EventTarget(), { visibilityState: "visible" as DocumentVisibilityState });
+    const network = { online: true };
+    const check = vi.fn(async () => {});
+    const stop = startUpdateChecks({ check, isOnline: () => network.online, win, doc });
+    const goOnline = () => win.dispatchEvent(new Event("online"));
+    const setVisibility = (state: DocumentVisibilityState) => {
+      doc.visibilityState = state;
+      doc.dispatchEvent(new Event("visibilitychange"));
+    };
+    return { check, stop, network, goOnline, setVisibility };
+  }
+
+  test("checks once an hour while online", async () => {
+    const { check } = setup();
+    await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL_MS - 1);
+    expect(check).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(check).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL_MS);
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  test("never checks while offline", async () => {
+    const { check, network, goOnline } = setup();
+    network.online = false;
+    await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL_MS);
+    goOnline(); // a stray event while navigator.onLine is still false
+    expect(check).not.toHaveBeenCalled();
+  });
+
+  test("coming back online always checks, even right after another check", () => {
+    const { check, goOnline } = setup();
+    goOnline();
+    goOnline();
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  test("returning to the foreground checks at most once a minute", async () => {
+    const { check, setVisibility } = setup();
+    setVisibility("visible"); // registering just checked
+    expect(check).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(UPDATE_CHECK_MIN_GAP_MS);
+    setVisibility("visible");
+    setVisibility("visible");
+    expect(check).toHaveBeenCalledTimes(1);
+  });
+
+  test("going to the background doesn't check", async () => {
+    const { check, setVisibility } = setup();
+    await vi.advanceTimersByTimeAsync(UPDATE_CHECK_MIN_GAP_MS);
+    setVisibility("hidden");
+    expect(check).not.toHaveBeenCalled();
+  });
+
+  test("a failed check is harmless and the next trigger checks again", async () => {
+    const { check, goOnline } = setup();
+    check.mockRejectedValueOnce(new Error("network"));
+    goOnline();
+    await vi.advanceTimersByTimeAsync(0);
+    goOnline();
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  test("stop() ends every trigger", async () => {
+    const { check, stop, goOnline, setVisibility } = setup();
+    stop();
+    await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL_MS);
+    goOnline();
+    setVisibility("visible");
+    expect(check).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("checkForUpdate", () => {
+  function registration(installing: object | null = null) {
+    return { installing, update: vi.fn(async () => {}) } as unknown as Pick<
+      ServiceWorkerRegistration,
+      "installing" | "update"
+    > & { update: ReturnType<typeof vi.fn> };
+  }
+
+  test("fetches sw.js without any cache and updates when the server answers 200", async () => {
+    const reg = registration();
+    const fetchSw = vi.fn(async () => new Response("", { status: 200 }));
+    await checkForUpdate("/sw.js", reg, fetchSw);
+    expect(fetchSw).toHaveBeenCalledWith("/sw.js", expect.objectContaining({ cache: "no-store" }));
+    expect(reg.update).toHaveBeenCalledTimes(1);
+  });
+
+  test("a server error or a network failure is never taken for an update", async () => {
+    const reg = registration();
+    await checkForUpdate("/sw.js", reg, vi.fn(async () => new Response("", { status: 503 })));
+    await checkForUpdate("/sw.js", reg, vi.fn(async () => Promise.reject(new TypeError("offline"))));
+    expect(reg.update).not.toHaveBeenCalled();
+  });
+
+  test("does nothing while an update is already installing", async () => {
+    const reg = registration({});
+    const fetchSw = vi.fn();
+    await checkForUpdate("/sw.js", reg, fetchSw);
+    expect(fetchSw).not.toHaveBeenCalled();
+  });
+});
+
+describe("shouldShowUpdatePrompt", () => {
+  test("only for a ready update that wasn't dismissed, and never during a job", () => {
+    for (const updateReady of [false, true])
+      for (const dismissed of [false, true])
+        for (const jobRunning of [false, true])
+          expect(shouldShowUpdatePrompt({ updateReady, dismissed, jobRunning })).toBe(
+            updateReady && !dismissed && !jobRunning,
+          );
+  });
+});
+```
+
+Create `src/lib/job-activity.test.ts`:
+
+```ts
+import { describe, expect, test, vi } from "vitest";
+
+import { isJobRunning, jobFinished, jobStarted, subscribeJobActivity } from "@/lib/job-activity";
+
+// The store is module state: every test leaves it idle again.
+describe("job activity", () => {
+  test("a started job counts as running until it finishes", () => {
+    expect(isJobRunning()).toBe(false);
+    jobStarted();
+    expect(isJobRunning()).toBe(true);
+    jobFinished();
+    expect(isJobRunning()).toBe(false);
+  });
+
+  test("overlapping jobs run until the last one finishes", () => {
+    jobStarted();
+    jobStarted();
+    jobFinished();
+    expect(isJobRunning()).toBe(true);
+    jobFinished();
+    expect(isJobRunning()).toBe(false);
+  });
+
+  test("an extra finish never makes a later job look idle", () => {
+    jobFinished();
+    jobStarted();
+    expect(isJobRunning()).toBe(true);
+    jobFinished();
+    expect(isJobRunning()).toBe(false);
+  });
+
+  test("subscribers hear every change until they unsubscribe", () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeJobActivity(listener);
+    jobStarted();
+    jobFinished();
+    expect(listener).toHaveBeenCalledTimes(2);
+    unsubscribe();
+    jobStarted();
+    jobFinished();
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+});
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `npx vitest run src/lib/update-check.test.ts src/lib/job-activity.test.ts`
+Expected: both suites FAIL with "Failed to resolve import".
+
+- [ ] **Step 3: Implement**
+
+Create `src/lib/update-check.ts`:
+
+```ts
+/** How often an open app checks for a new deployment while online. */
+export const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+/** Returning to the foreground checks only if the last check was at least this long ago. */
+export const UPDATE_CHECK_MIN_GAP_MS = 60 * 1000;
+
+type Listenable = Pick<EventTarget, "addEventListener" | "removeEventListener">;
+
+export type UpdateCheckOptions = {
+  check: () => Promise<void>;
+  isOnline: () => boolean;
+  intervalMs?: number;
+  minGapMs?: number;
+  win?: Listenable;
+  doc?: Listenable & { readonly visibilityState: DocumentVisibilityState };
+  now?: () => number;
+};
+
+/**
+ * Checks for a new deployment hourly, whenever the device comes back online, and when the app returns
+ * to the foreground (at most once per minGapMs). Never while offline. Returns a function that stops it.
+ */
+export function startUpdateChecks({
+  check,
+  isOnline,
+  intervalMs = UPDATE_CHECK_INTERVAL_MS,
+  minGapMs = UPDATE_CHECK_MIN_GAP_MS,
+  win = window,
+  doc = document,
+  now = Date.now,
+}: UpdateCheckOptions): () => void {
+  let lastCheck = now(); // registering the service worker has just checked
+  const run = (throttled: boolean) => {
+    if (!isOnline()) return;
+    if (throttled && now() - lastCheck < minGapMs) return;
+    lastCheck = now();
+    check().catch(() => {}); // a failed check just waits for the next trigger
+  };
+  const onOnline = () => run(false);
+  const onVisibility = () => {
+    if (doc.visibilityState === "visible") run(true);
+  };
+  const timer = setInterval(() => run(false), intervalMs);
+  win.addEventListener("online", onOnline);
+  doc.addEventListener("visibilitychange", onVisibility);
+  return () => {
+    clearInterval(timer);
+    win.removeEventListener("online", onOnline);
+    doc.removeEventListener("visibilitychange", onVisibility);
+  };
+}
+
+/**
+ * One check, following vite-plugin-pwa's recipe for edge cases: only if sw.js is reachable (HTTP 200)
+ * does the browser compare it with the installed one, so a down server never looks like an update.
+ */
+export async function checkForUpdate(
+  swUrl: string,
+  registration: Pick<ServiceWorkerRegistration, "installing" | "update">,
+  fetchSw: typeof fetch = fetch,
+): Promise<void> {
+  if (registration.installing) return;
+  const response = await fetchSw(swUrl, { cache: "no-store", headers: { "cache-control": "no-cache" } }).catch(
+    () => null,
+  );
+  if (response?.status === 200) await registration.update();
+}
+
+/** The dialog shows for a ready update the user hasn't put off, and never while a job runs (updating reloads). */
+export function shouldShowUpdatePrompt({
+  updateReady,
+  dismissed,
+  jobRunning,
+}: {
+  updateReady: boolean;
+  dismissed: boolean;
+  jobRunning: boolean;
+}): boolean {
+  return updateReady && !dismissed && !jobRunning;
+}
+```
+
+Create `src/lib/job-activity.ts`:
+
+```ts
+/**
+ * Whether any qpdf job is running in this tab. The update prompt reads it: updating reloads the page,
+ * which must never happen mid-job. useQpdfJob reports starts and finishes.
+ */
+let running = 0;
+const listeners = new Set<() => void>();
+const notify = () => listeners.forEach((listener) => listener());
+
+export function jobStarted(): void {
+  running++;
+  notify();
+}
+
+export function jobFinished(): void {
+  running = Math.max(0, running - 1);
+  notify();
+}
+
+export function isJobRunning(): boolean {
+  return running > 0;
+}
+
+export function subscribeJobActivity(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+```
+
+Note: the "extra finish" test relies on the clamp. A stray `jobFinished()` at idle must not leave the count at -1, which would make the next job look idle.
+
+- [ ] **Step 4: Run them to verify they pass**
+
+Run: `npx vitest run src/lib/update-check.test.ts src/lib/job-activity.test.ts`
+Expected: 15 PASS (11 + 4).
+
+- [ ] **Step 5: Report jobs from `useQpdfJob`**
+
+In `src/lib/use-qpdf-job.ts`, add `import { jobFinished, jobStarted } from "@/lib/job-activity";` below the `crash-guard` import, call `jobStarted();` on the line after `markJobStarted();`, and `jobFinished();` on the line after `markJobFinished();`.
+
+- [ ] **Step 6: Full check, commit, push**
+
+```bash
+npm run lint && npm test && npm run build
+git add src/lib/update-check.ts src/lib/update-check.test.ts src/lib/job-activity.ts src/lib/job-activity.test.ts src/lib/use-qpdf-job.ts
+git commit -m "feat: update checker and job-activity store for the update prompt"
+git push
+```
+
+---
+
+### Task 9: Update dialog and footer button
+
+**Files:**
+- Create: `src/components/ui/alert-dialog.tsx`, `src/lib/use-app-update.ts`, `src/components/UpdatePrompt.tsx`
+- Modify: `src/components/AppShell.tsx`, `src/main.tsx`, `tsconfig.app.json`, `package.json`, `package-lock.json`
+
+**Interfaces:**
+- Consumes: Task 8's exports.
+- Produces: `useAppUpdate(): { updateReady: boolean; promptOpen: boolean; jobRunning: boolean; later: () => void; updateNow: () => void }`; `UpdateDialog({ open, onLater, onUpdate })`; `UpdateFooterButton({ disabled, onUpdate })`. The DOM for Task 10: `role="alertdialog"` named "Update available", buttons "Later" / "Update now", and footer button "Update to the latest version".
+
+No unit test is possible here: the hook imports a Vite virtual module, and Vitest runs without a DOM. Its logic lives in Task 8's tested functions, and Task 10's E2E tests cover the wiring. Verify with lint, build and the existing E2E suite.
+
+- [ ] **Step 1: Dependencies and types**
+
+```bash
+npm install @radix-ui/react-alert-dialog@^1.1.24
+```
+
+In `tsconfig.app.json`, change `"types": ["vite/client", "vite-plugin-pwa/client"],` to `"types": ["vite/client", "vite-plugin-pwa/client", "vite-plugin-pwa/react"],`.
+
+- [ ] **Step 2: shadcn AlertDialog**
+
+Create `src/components/ui/alert-dialog.tsx`. This is the new-york v4 source with the import changed to `@radix-ui/react-alert-dialog`, keeping only the parts we use (no Trigger or Media, no `size` variants):
+
+```tsx
+import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
+import * as React from "react";
+
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+function AlertDialog({ ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Root>) {
+  return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />;
+}
+
+function AlertDialogOverlay({ className, ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Overlay>) {
+  return (
+    <AlertDialogPrimitive.Overlay
+      data-slot="alert-dialog-overlay"
+      className={cn(
+        "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+function AlertDialogContent({ className, ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Content>) {
+  return (
+    <AlertDialogPrimitive.Portal data-slot="alert-dialog-portal">
+      <AlertDialogOverlay />
+      <AlertDialogPrimitive.Content
+        data-slot="alert-dialog-content"
+        className={cn(
+          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+          className,
+        )}
+        {...props}
+      />
+    </AlertDialogPrimitive.Portal>
+  );
+}
+
+function AlertDialogHeader({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="alert-dialog-header"
+      className={cn("grid gap-1.5 text-center sm:text-left", className)}
+      {...props}
+    />
+  );
+}
+
+function AlertDialogFooter({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="alert-dialog-footer"
+      className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)}
+      {...props}
+    />
+  );
+}
+
+function AlertDialogTitle({ className, ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Title>) {
+  return (
+    <AlertDialogPrimitive.Title data-slot="alert-dialog-title" className={cn("text-lg font-semibold", className)} {...props} />
+  );
+}
+
+function AlertDialogDescription({
+  className,
+  ...props
+}: React.ComponentProps<typeof AlertDialogPrimitive.Description>) {
+  return (
+    <AlertDialogPrimitive.Description
+      data-slot="alert-dialog-description"
+      className={cn("text-sm text-muted-foreground", className)}
+      {...props}
+    />
+  );
+}
+
+function AlertDialogAction({
+  className,
+  variant = "default",
+  size = "default",
+  ...props
+}: React.ComponentProps<typeof AlertDialogPrimitive.Action> & Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
+  return (
+    <Button variant={variant} size={size} asChild>
+      <AlertDialogPrimitive.Action data-slot="alert-dialog-action" className={cn(className)} {...props} />
+    </Button>
+  );
+}
+
+function AlertDialogCancel({
+  className,
+  variant = "outline",
+  size = "default",
+  ...props
+}: React.ComponentProps<typeof AlertDialogPrimitive.Cancel> & Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
+  return (
+    <Button variant={variant} size={size} asChild>
+      <AlertDialogPrimitive.Cancel data-slot="alert-dialog-cancel" className={cn(className)} {...props} />
+    </Button>
+  );
+}
+
+export {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+};
+```
+
+- [ ] **Step 3: The hook**
+
+Create `src/lib/use-app-update.ts`:
+
+```ts
+import { useState, useSyncExternalStore } from "react";
+import { useRegisterSW } from "virtual:pwa-register/react";
+
+import { isJobRunning, subscribeJobActivity } from "@/lib/job-activity";
+import { checkForUpdate, shouldShowUpdatePrompt, startUpdateChecks } from "@/lib/update-check";
+
+/**
+ * Registers the service worker, checks for a new deployment while online (see startUpdateChecks), and
+ * tracks the update prompt. updateNow() activates the waiting worker and reloads, never during a job.
+ */
+export function useAppUpdate() {
+  const {
+    needRefresh: [updateReady],
+    updateServiceWorker,
+  } = useRegisterSW({
+    immediate: true,
+    onRegisteredSW(swUrl, registration) {
+      if (!registration) return;
+      startUpdateChecks({ check: () => checkForUpdate(swUrl, registration), isOnline: () => navigator.onLine });
+    },
+  });
+  const jobRunning = useSyncExternalStore(subscribeJobActivity, isJobRunning);
+  const [dismissed, setDismissed] = useState(false);
+
+  return {
+    updateReady,
+    promptOpen: shouldShowUpdatePrompt({ updateReady, dismissed, jobRunning }),
+    jobRunning,
+    later: () => setDismissed(true),
+    updateNow: () => {
+      if (!isJobRunning()) void updateServiceWorker(true);
+    },
+  };
+}
+```
+
+- [ ] **Step 4: The dialog and the footer button**
+
+Create `src/components/UpdatePrompt.tsx`:
+
+```tsx
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+
+/** Offers a downloaded new version. Later (or Esc) puts it off; the footer button stays available. */
+export function UpdateDialog({ open, onLater, onUpdate }: { open: boolean; onLater: () => void; onUpdate: () => void }) {
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onLater();
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Update available</AlertDialogTitle>
+          <AlertDialogDescription>
+            A new version of PDF Toolbox is ready. Updating reloads the page, so anything you've chosen here will need
+            to be chosen again.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Later</AlertDialogCancel>
+          <AlertDialogAction onClick={onUpdate}>Update now</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/** Footer entry after the version once an update is ready; disabled while a job runs. */
+export function UpdateFooterButton({ disabled, onUpdate }: { disabled: boolean; onUpdate: () => void }) {
+  return (
+    <>
+      {" · "}
+      <Button variant="link" size="sm" className="h-auto p-0 text-xs" disabled={disabled} onClick={onUpdate}>
+        Update to the latest version
+      </Button>
+    </>
+  );
+}
+```
+
+- [ ] **Step 5: Mount in `AppShell`, stop registering in `main.tsx`**
+
+In `src/components/AppShell.tsx`:
+
+1. Add imports: `import { UpdateDialog, UpdateFooterButton } from "@/components/UpdatePrompt";` (after the `CrashNotice` import) and `import { useAppUpdate } from "@/lib/use-app-update";` (after the `use-theme` import).
+2. Below `const { mode, toggle } = useTheme();` add `const update = useAppUpdate();`.
+3. Replace the footer's second line, `{__APP_BUILD_LABEL__ ? \` · ${__APP_BUILD_LABEL__}\` : null}`, with:
+
+```tsx
+        {__APP_BUILD_LABEL__ ? ` · ${__APP_BUILD_LABEL__}` : null}
+        {update.updateReady && !update.promptOpen ? (
+          <UpdateFooterButton disabled={update.jobRunning} onUpdate={update.updateNow} />
+        ) : null}
+```
+
+4. Directly after `</footer>`, add `<UpdateDialog open={update.promptOpen} onLater={update.later} onUpdate={update.updateNow} />`.
+
+In `src/main.tsx`, delete `import { registerSW } from "virtual:pwa-register";` and `registerSW({ immediate: true });`. `useAppUpdate` registers the worker now.
+
+- [ ] **Step 6: Full check including E2E**
+
+Stop any server on port 4173 first (see the extra global constraints).
+
+```bash
+npm run lint && npm test && npm run build && grep -o 'qpdf[^"]*\.wasm' dist/sw.js && npm run test:e2e
+```
+
+Expected: all PASS. `offline.spec.ts` in particular proves the service worker still registers.
+
+- [ ] **Step 7: Commit, push**
+
+```bash
+git add package.json package-lock.json tsconfig.app.json src/components/ui/alert-dialog.tsx src/lib/use-app-update.ts src/components/UpdatePrompt.tsx src/components/AppShell.tsx src/main.tsx
+git commit -m "feat: update prompt dialog and footer button"
+git push
+```
+
+---
+
+### Task 10: E2E for the update prompt; docs
+
+**Files:**
+- Create: `e2e/preview-server.ts` (moved out of `e2e/offline.spec.ts`)
+- Create: `e2e/update.spec.ts`
+- Modify: `e2e/offline.spec.ts`, `AGENTS.md`, `CHANGELOG.md`, `docs/todo.md`
+
+**Interfaces:**
+- Consumes: Task 9's DOM; `chooseFiles`, `spaceOutProgress` from `e2e/helpers.ts`.
+- Produces: `freePort()`, `startPreview(port, outDir?)`, `stopPreview(child, port)` in `e2e/preview-server.ts`.
+
+- [ ] **Step 1: Share the preview-server helpers**
+
+Create `e2e/preview-server.ts` from `e2e/offline.spec.ts`: move `freePort`, `running`, `killGroup`, the `process.once("exit", …)` backstop, `startPreview` and `stopPreview` there, exported. Change `startPreview` to take an optional output directory:
+
+```ts
+export async function startPreview(port: number, outDir?: string): Promise<ChildProcess> {
+  const child = spawn(
+    "npx",
+    ["vite", "preview", "--port", String(port), "--strictPort", ...(outDir ? ["--outDir", outDir] : [])],
+    { stdio: "ignore", detached: true },
+  );
+```
+
+(The rest of its body is unchanged.) In `e2e/offline.spec.ts`, delete the moved code and the now-unused `node:child_process` and `node:net` imports, and add `import { freePort, startPreview, stopPreview } from "./preview-server";`.
+
+Run: `npm run test:e2e -- e2e/offline.spec.ts`
+Expected: PASS in Chromium and WebKit (a pure move).
+
+- [ ] **Step 2: Write the update E2E tests**
+
+Create `e2e/update.spec.ts`:
+
+```ts
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expect, test, type Page } from "@playwright/test";
+
+import { chooseFiles, spaceOutProgress } from "./helpers";
+import { freePort, startPreview, stopPreview } from "./preview-server";
+
+// Needs the real service worker, like offline.spec.ts.
+test.use({ serviceWorkers: "allow" });
+
+/** A copy of dist/ on its own port, so a test can "deploy" a new version into it. */
+async function servedCopy() {
+  const dir = await mkdtemp(join(tmpdir(), "pdf-mss-io-update-"));
+  await cp("dist", dir, { recursive: true });
+  const port = await freePort();
+  const server = await startPreview(port, dir);
+  return {
+    dir,
+    origin: `http://localhost:${port}`,
+    async stop() {
+      await stopPreview(server, port);
+      await rm(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+/** A deploy: index.html changes (it gains a marker), and sw.js's precache list says so. */
+async function deployNewVersion(dir: string) {
+  const index = join(dir, "index.html");
+  await writeFile(index, (await readFile(index, "utf8")).replace("</head>", '<meta name="e2e-deploy" content="2"></head>'));
+  const sw = join(dir, "sw.js");
+  const source = await readFile(sw, "utf8");
+  const updated = source.replace(/(url:"index\.html",revision:")[^"]*"/, '$1e2e-deploy-2"');
+  expect(updated, "sw.js precache entry for index.html not found").not.toBe(source);
+  await writeFile(sw, updated);
+}
+
+/** Opens the app and waits until its service worker controls the page. */
+async function openInstalled(page: Page, url: string) {
+  await page.goto(url);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+}
+
+const comeBackOnline = (page: Page) => page.evaluate(() => window.dispatchEvent(new Event("online")));
+const runsNewVersion = (page: Page) => page.locator('meta[name="e2e-deploy"]').count();
+
+test("a new deployment is offered; Later moves it to the footer, which updates", async ({ page }) => {
+  const site = await servedCopy();
+  try {
+    await openInstalled(page, `${site.origin}/`);
+    await deployNewVersion(site.dir);
+    await comeBackOnline(page);
+
+    const dialog = page.getByRole("alertdialog", { name: "Update available" });
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await dialog.getByRole("button", { name: "Later" }).click();
+    await expect(dialog).toBeHidden();
+    expect(await runsNewVersion(page)).toBe(0);
+
+    await page.getByRole("button", { name: "Update to the latest version" }).click();
+    await expect.poll(() => runsNewVersion(page), { timeout: 15_000 }).toBe(1);
+    await expect(page.getByRole("button", { name: "Update to the latest version" })).toHaveCount(0);
+  } finally {
+    await site.stop();
+  }
+});
+
+test("an update that arrives during a job waits until the job is done", async ({ page }) => {
+  const site = await servedCopy();
+  try {
+    await spaceOutProgress(page, { gapMs: 80 }); // the Compress below takes ~8 s
+    await openInstalled(page, `${site.origin}/compress`);
+    await chooseFiles(page, "twenty-mb.pdf");
+    await page.getByRole("button", { name: "Compress", exact: true }).click();
+    await expect(page.getByRole("progressbar")).toBeVisible();
+
+    await deployNewVersion(site.dir);
+    await comeBackOnline(page);
+    // Ready, but held back: no dialog, and the footer button can't be used yet.
+    await expect(page.getByRole("button", { name: "Update to the latest version" })).toBeDisabled({ timeout: 15_000 });
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+
+    await expect(page.getByText("Your PDF is smaller")).toBeVisible({ timeout: 30_000 });
+    const dialog = page.getByRole("alertdialog", { name: "Update available" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Update now" }).click();
+    await expect.poll(() => runsNewVersion(page), { timeout: 15_000 }).toBe(1);
+  } finally {
+    await site.stop();
+  }
+});
+```
+
+- [ ] **Step 3: Run them**
+
+Run: `npm run test:e2e -- e2e/update.spec.ts`
+Expected: both PASS. (They are written after Task 9 because they test its DOM, so there's no red phase against missing code. To prove they can fail, temporarily change `shouldShowUpdatePrompt` to return `updateReady && !dismissed`. Test 2 must then FAIL at `toHaveCount(0)`. Revert.)
+
+- [ ] **Step 4: Docs**
+
+1. `AGENTS.md`, "PWA notes": replace the first bullet (from `- \`vite-plugin-pwa\` (\`vite.config.ts\`) uses \`registerType: 'prompt'\` with no prompt UI` through `open pages are never reloaded.`) with:
+
+```markdown
+- `vite-plugin-pwa` (`vite.config.ts`) uses `registerType: 'prompt'`. `useAppUpdate` (`src/lib/use-app-update.ts`,
+  mounted by `AppShell`) registers the worker and checks for a new deployment while online: hourly, on `online`, and
+  on returning to the foreground at most once a minute (`src/lib/update-check.ts`). A downloaded update shows the
+  "Update available" dialog; Later moves it to a footer button. Nothing reloads while a job runs
+  (`src/lib/job-activity.ts`). Closing every tab and reopening still picks up a new version.
+- Hosting: `sw.js` and `index.html` must not be long-cached by a CDN (`Cache-Control: no-cache` or a short edge
+  cache), or the update check sees a stale version. Hashed `assets/` files can be cached forever.
+```
+
+   Also add to the Map, after the `src/lib/job-progress.ts` line:
+
+```
+src/lib/update-check.ts   when to check for a new deployment; whether to show the update dialog
+src/lib/job-activity.ts   is any job running (the update prompt never reloads mid-job)
+src/lib/use-app-update.ts registers the service worker; update prompt state
+src/components/UpdatePrompt.tsx  "Update available" dialog + footer button
+```
+
+   and in "E2E tests", after the `offline.spec.ts` bullet: `- \`update.spec.ts\` serves a copy of \`dist/\` (shared helpers in \`e2e/preview-server.ts\`), "deploys" a new version by rewriting its \`sw.js\` and \`index.html\`, and fires \`online\`.`
+
+2. `CHANGELOG.md`, under `## [1.1.0]` → `### Added`, add a bullet:
+
+```markdown
+- While online, the app checks for a newer version and offers to update ("Update available"); "Later"
+  keeps an update button in the footer. It never reloads while a file is being processed.
+```
+
+3. `docs/todo.md`: add an automated-check row after the "Info shows no progress bar" row:
+
+```markdown
+| Update prompt: a new deployment shows "Update available"; Later moves it to the footer button, which updates; an update during a job waits until the job is done | `e2e/update.spec.ts` |
+```
+
+   and an owner box at the end of "Owner checks for 1.1.0":
+
+```markdown
+- [ ] Update prompt on the iPhone: with the app installed from a test build, serve a newer test build. Within a minute of returning to the app, "Update available" shows; Later puts "Update to the latest version" in the footer; updating shows the new build code in the footer.
+```
+
+- [ ] **Step 5: Full check, commit, push**
+
+```bash
+npm run lint && npm test && npm run build && npm run test:e2e
+git add e2e/preview-server.ts e2e/update.spec.ts e2e/offline.spec.ts AGENTS.md CHANGELOG.md docs/todo.md
+git commit -m "test: update prompt E2E; docs for the update prompt"
+git push
+```

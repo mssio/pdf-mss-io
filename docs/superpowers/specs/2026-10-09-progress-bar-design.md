@@ -1,7 +1,8 @@
 # PDF Toolbox 1.1.0: real progress bar
 
 Date: 2026-10-09
-Status: approved; revised 2026-10-09 after an iPhone test (smooth bar motion, section 4)
+Status: approved; revised 2026-10-09 after an iPhone test (smooth bar motion, section 4) and to add the
+update prompt (section 7, draft for owner review)
 
 ## Goal
 
@@ -12,7 +13,8 @@ Status: approved; revised 2026-10-09 after an iPhone test (smooth bar motion, se
 - detect a stuck engine faster and more fairly: once progress flows, fail on *no progress for 30 s*
   instead of only on a size-based total time.
 
-Nothing else changes in 1.1.0. Images and Organize stay in 1.2.0 (`docs/notes/1.2.0-plan.md`).
+1.1.0 also adds an **update prompt** (section 7): while online, the app checks for a newer deployment
+and offers to switch to it. Nothing else changes in 1.1.0. Images and Organize stay in 1.2.0 (`docs/notes/1.2.0-plan.md`).
 This spec replaces `docs/notes/1.1.0-plan.md`, deleted in the commit that adds this spec.
 
 ## Decisions (from the brainstorming conversation)
@@ -27,6 +29,7 @@ This spec replaces `docs/notes/1.1.0-plan.md`, deleted in the commit that adds t
 | Info tool | No bar. `info()` takes no `onProgress`, and the Info tool's `run()` calls write no PDF. |
 | UI primitive | shadcn new-york v4 `Progress`, adapted to `@radix-ui/react-progress`. |
 | Bar motion | The fill glides to each new value (~600 ms, ease-out) and slides in from 0 when the bar appears, because qpdf's percent comes in bursts (section 1). No motion with "Reduce Motion" on. The `%` text always shows qpdf's real value. |
+| Update prompt | In 1.1.0 (owner, 2026-10-09). Checks hourly, when the app returns to the foreground and when the device comes back online; dialog "Update available" with Later / Update now; after Later, an "Update to the latest version" button in the footer. Never reloads during a job. Static hosting only. |
 | App version | `1.1.0`. |
 
 ## 1. What the package gives us
@@ -222,9 +225,98 @@ rising values ending at 100. Guards against a package regression.
     - [ ] Installed PWA updates to 1.1.0 (close all tabs, reopen) and still works offline.
   - the "Next versions" paragraph already points 1.1.0 at this spec (changed with the spec commit).
 
+## 7. Update prompt
+
+### Why
+
+`registerType: 'prompt'` already makes a new deployment wait instead of taking over open pages, but
+1.0.0 has no prompt UI: the new version is only used once every tab of the app has been closed and it
+is opened again. On an iPhone home-screen app that is easy to miss, and testing showed it confuses even
+the owner. 1.1.0 adds the prompt.
+
+### Static hosting only
+
+No backend. The check is the browser re-fetching `/sw.js` (a few KB) and comparing it byte for byte;
+each build writes a new `sw.js` (its precache list carries every file's revision), so a changed file
+means a new version. The new files download into the cache in the background; the app is told when
+they are ready. **Hosting requirement:** HTTPS (already needed for offline), and `sw.js` and
+`index.html` must not be long-cached by a CDN (`Cache-Control: no-cache` or a short edge cache).
+Hashed files under `assets/` can be cached forever. Browsers bypass their own HTTP cache for `sw.js`.
+
+### What the user sees
+
+- When a new version has **finished downloading**:
+
+  > **Update available**
+  > A new version of PDF Toolbox is ready. Updating reloads the page, so anything you've chosen here
+  > will need to be chosen again.
+  > [Later] [Update now]
+
+- **Update now** activates the new service worker and reloads the page.
+- **Later** (or Esc) closes the dialog. It doesn't reopen for the rest of the session; the footer shows
+  a button after the version: `… · Version 1.1.0 · Update to the latest version`.
+- **During a job nothing interrupts.** If the update becomes ready while a job runs, the dialog waits
+  until the job ends. The footer button is disabled while a job runs. (A reload mid-job would lose the
+  work and trigger the crash notice.)
+- **Offline:** no checks. Coming back online triggers one.
+- Closing every tab still works: the next launch already uses the new version.
+- Copy (the only new strings): "Update available", the sentence above, "Later", "Update now",
+  "Update to the latest version".
+
+### When it checks
+
+- Once an hour while the app is open (`UPDATE_CHECK_INTERVAL_MS = 3_600_000`).
+- When the device comes back online (`online` event), always.
+- When the app returns to the foreground (`visibilitychange` → `visible`), unless the last check was
+  less than 60 s ago (`UPDATE_CHECK_MIN_GAP_MS = 60_000`), so switching apps doesn't spam requests.
+- Never while `navigator.onLine` is false.
+- A check fetches `sw.js` with `cache: "no-store"`; only on HTTP 200 does it call
+  `registration.update()` (the plugin's documented recipe), so a down server is never mistaken for a
+  new version. A check that is already installing an update is skipped. A failed check waits for the
+  next trigger.
+
+### Units
+
+| File | Responsibility |
+|---|---|
+| `src/lib/update-check.ts` | `startUpdateChecks({ check, isOnline, … }) → stop`, `checkForUpdate(swUrl, registration)`, `shouldShowUpdatePrompt({ updateReady, dismissed, jobRunning })`. Pure (timers, events and fetch injected), unit-tested. |
+| `src/lib/job-activity.ts` | Whether any qpdf job runs: `jobStarted()`, `jobFinished()`, `isJobRunning()`, `subscribeJobActivity(listener)`. `useQpdfJob` calls it next to `markJobStarted`/`markJobFinished`. Unit-tested. |
+| `src/lib/use-app-update.ts` | Wraps `useRegisterSW` (`virtual:pwa-register/react`); starts the checks in `onRegisteredSW`; returns `{ updateReady, promptOpen, jobRunning, later, updateNow }`. `updateNow()` does nothing while a job runs. |
+| `src/components/ui/alert-dialog.tsx` | shadcn new-york v4 AlertDialog on `@radix-ui/react-alert-dialog` (focus trap, Esc = Later, screen-reader roles). |
+| `src/components/UpdatePrompt.tsx` | `UpdateDialog` and `UpdateFooterButton`, mounted by `AppShell`. |
+| `src/main.tsx` | Stops calling `registerSW()`; the hook registers the service worker. |
+
+Everything is bundled into the precache; the only new runtime request is the `sw.js` check.
+
+### Tests
+
+- Unit: the checker (hourly tick, offline skip, `online` always checks, foreground throttle, failed
+  check is harmless, `stop()`), `checkForUpdate` (200 → update; non-200 or network error → no update;
+  installing → no fetch), `shouldShowUpdatePrompt` (all combinations), the job store.
+- E2E `e2e/update.spec.ts` (service workers on, own server on a copy of `dist/`, like
+  `offline.spec.ts`): after the worker is active, the test rewrites the copy's `sw.js` and
+  `index.html` (a simulated deploy) and fires `online`.
+  - The dialog appears; **Later** closes it and shows the footer button; the button reloads into the
+    new version (a marker in the new `index.html`).
+  - A Compress running with slowed progress (`spaceOutProgress`): the dialog stays closed while the
+    job runs and the footer button is disabled; after the result, the dialog appears and **Update
+    now** reloads into the new version.
+- `offline.spec.ts` and the rest stay green.
+
+### Docs and release gate
+
+- AGENTS.md "PWA notes": replace "no prompt UI … open pages are never reloaded" with the prompt
+  behavior and the hosting requirement.
+- CHANGELOG 1.1.0: "Added: a prompt to update to the latest version (checks while online)".
+- `docs/todo.md`: automated-check row for `e2e/update.spec.ts`; owner box: with the app installed on
+  the iPhone, serve a newer test build; the dialog appears, Later shows the footer button, and
+  updating shows the new build code in the footer.
+
 ## Out of scope
 
 - Progress for Info, `ensureNoOpenPassword` or post-steps (qpdf reports none).
 - An overall percentage across several qpdf calls in one job.
 - Cancelling a running job (the package can only `terminate()` the whole instance).
-- Any change to size limits, memory guards or copy beyond "Finishing…".
+- Any change to size limits or memory guards.
+- Showing the new version's number in the update dialog (the service worker doesn't carry it).
+- Updating users still on 1.0.0 through the dialog: their cached app has no prompt, so they reach 1.1.0 the old way (close every tab, reopen), once.
