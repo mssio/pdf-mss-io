@@ -27,7 +27,7 @@ Web Worker). It is a PWA that works offline. Design spec:
 ```
 src/tools.ts              tool registry → routes, header links, home cards
 src/router.ts             createBrowserRouter: AppShell, home, one lazy route per tool
-src/main.tsx              entry; registers the service worker
+src/main.tsx              entry (the service worker is registered by useAppUpdate)
 src/components/           AppShell, PdfFileDropzone, ToolPage, ResultCard, ErrorBox, SizeNotice
 src/components/RouteError.tsx  error screen; mounted on a pathless route inside AppShell (src/router.ts)
 src/pages/NotFoundPage.tsx  catch-all "Page not found" route inside AppShell
@@ -38,6 +38,10 @@ src/pages/                HomePage + one <Name>Page.tsx per tool (exports `Compo
 src/lib/qpdf.ts           getQpdf, ensureNoOpenPassword, assertOutput, describeQpdfError, logWarnings
 src/lib/use-qpdf-job.ts   busy/error state for one job; drops stale results
 src/lib/job-progress.ts   JobStatusState; turns qpdf write progress into status (drops stale jobs)
+src/lib/update-check.ts   when to check for a new deployment; whether to show the update dialog
+src/lib/job-activity.ts   is any job running (the update prompt never reloads mid-job)
+src/lib/use-app-update.ts registers the service worker; update prompt state
+src/components/UpdatePrompt.tsx  "Update available" dialog + footer button
 src/lib/use-blob-url.ts   owns the download blob URL and revokes it
 src/lib/crash-guard.ts    sessionStorage note while a job runs; src/components/CrashNotice.tsx explains a mid-job reload
 src/components/JobStatus.tsx  step + elapsed time (and a progress bar while qpdf writes) under the submit button
@@ -100,8 +104,13 @@ docs/notes/<ver>-plan.md  plans for future versions; their owner checks move int
 
 ## PWA notes
 
-- `vite-plugin-pwa` (`vite.config.ts`) uses `registerType: 'prompt'` with no prompt UI (`registerSW({ immediate: true })`
-  without callbacks). A new deployment is downloaded the next time the app is opened online and used once every tab of the app has been closed and it is opened again; open pages are never reloaded.
+- `vite-plugin-pwa` (`vite.config.ts`) uses `registerType: 'prompt'`. `useAppUpdate` (`src/lib/use-app-update.ts`,
+  mounted by `AppShell`) registers the worker and checks for a new deployment while online: hourly, on `online`, and
+  on returning to the foreground at most once a minute (`src/lib/update-check.ts`). A downloaded update shows the
+  "Update available" dialog; Later moves it to a footer button. Nothing reloads while a job runs
+  (`src/lib/job-activity.ts`). Closing every tab and reopening still picks up a new version.
+- Hosting: `sw.js` and `index.html` must not be long-cached by a CDN (`Cache-Control: no-cache` or a short edge
+  cache), or the update check sees a stale version. Hashed `assets/` files can be cached forever.
 - Workbox precaches `**/*.{js,css,html,svg,png,ico,wasm,webmanifest}` with
   `maximumFileSizeToCacheInBytes: 3_000_000`. qpdf's wasm is ~2.2 MB; if an asset grows past 3 MB the
   build fails. Raise the limit deliberately, never drop the wasm from the precache.
@@ -125,6 +134,8 @@ byte-identical `qpdf.wasm` (same SHA-256), so this still holds. Re-check both if
 - Service workers are blocked by default (they would bypass `page.route()`); `offline.spec.ts`
   re-enables them, starts its own preview server on a free port, waits for the cached wasm, then
   stops the server. `context.setOffline()` breaks navigation in WebKit, so don't use it.
+- `update.spec.ts` serves a copy of `dist/` (shared helpers in `e2e/preview-server.ts`), "deploys" a new version by
+  rewriting its `sw.js` and `index.html`, and fires `online`.
 - The error boundary must stay on the pathless route in `src/router.ts`: React Router ignores a lazy
   route's own `ErrorBoundary` when its import fails (pinned by `shell.spec.ts`).
 - Port 4173 must be free (`reuseExistingServer: false`, `--strictPort`). The offline spec kills its server's process group with `process.kill(-pid)`, which is macOS/Linux only.

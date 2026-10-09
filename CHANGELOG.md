@@ -10,6 +10,8 @@ All notable changes to this project are documented here. The format follows
 
 - A progress bar while the PDF is being written (Decrypt, Encrypt, Merge, Extract pages, Compress),
   then "Finishing…" for the last checks.
+- While online, the app checks for a newer version and offers to update ("Update available"); "Later"
+  keeps an update button in the footer. It never reloads while a file is being processed.
 
 ### Changed
 

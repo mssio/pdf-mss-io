@@ -37,6 +37,7 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 | While a job runs, the step and elapsed time show ("Loading the PDF engine… 0:05", then the tool's step) plus a hint for files over 50 MB; a stuck engine times out with "This file took too long to process on this device…" and the next job works with a fresh engine | `e2e/job-safeguard.spec.ts` |
 | While qpdf writes, a progress bar rises (0–99%, never inside the announced status), then the result; checked for Compress and Encrypt on a 20 MB, 400-page PDF and verified with `inspectPdf` | `e2e/job-safeguard.spec.ts` |
 | Info shows no progress bar | `e2e/info.spec.ts` |
+| Update prompt: a new deployment shows "Update available"; Later moves it to the footer button, which updates; an update during a job waits until the job is done | `e2e/update.spec.ts` |
 | A job cut off by a page reload is explained once after the reload ("The page reloaded while a file was being processed…"), and a finished job leaves no notice | `e2e/phone.spec.ts` |
 | Offline: service worker active and wasm cached, then with the server stopped `/info` and `/decrypt` load and decrypting works (Chromium and WebKit) | `e2e/offline.spec.ts` |
 
@@ -44,6 +45,7 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 
 - [x] Real iPhone: Compress and Encrypt a ~200 MB PDF. The bar moves, "Finishing…" shows, the download opens, and no "took too long" message appears.
 - [x] Desktop browser: the same with a large PDF. The bar moves smoothly and the result is correct.
+- [ ] Update prompt on the iPhone: with the app installed from a test build, serve a newer test build. Within a minute of returning to the app, "Update available" shows; Later puts "Update to the latest version" in the footer; updating shows the new build code in the footer.
 - [ ] Installed PWA: after closing every tab and reopening online, the footer shows 1.1.0, and the app still works offline.
 
 ## Next versions
