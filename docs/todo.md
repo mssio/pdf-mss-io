@@ -1,7 +1,7 @@
 # Checks and follow-ups
 
 Version 1.0.0 was released on 2026-10-07 (tag `v1.0.0`; see `CHANGELOG.md`). Every owner check for it
-was done. For the next release, add its owner checks here as unticked boxes and don't release until
+was done. Release 1.1.0 (progress bar) is in progress; its owner checks are below. Don't release until
 `npm run test:e2e` passes and every box is ticked.
 
 ## Setup
@@ -35,11 +35,20 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 | Phones (small touch screen, either orientation): files over the phone limit are refused with "On phones, files must be … Use a computer for bigger files."; a computer gets the computer wording | `e2e/phone.spec.ts` |
 | Every tool's result page shows how long the job took ("Finished in m:ss.") | all six tool specs |
 | While a job runs, the step and elapsed time show ("Loading the PDF engine… 0:05", then the tool's step) plus a hint for files over 50 MB; a stuck engine times out with "This file took too long to process on this device…" and the next job works with a fresh engine | `e2e/job-safeguard.spec.ts` |
+| While qpdf writes, a progress bar rises (0–99%, never inside the announced status), then the result; checked for Compress and Encrypt on a 20 MB, 400-page PDF and verified with `inspectPdf` | `e2e/job-safeguard.spec.ts` |
+| Info shows no progress bar | `e2e/info.spec.ts` |
 | A job cut off by a page reload is explained once after the reload ("The page reloaded while a file was being processed…"), and a finished job leaves no notice | `e2e/phone.spec.ts` |
 | Offline: service worker active and wasm cached, then with the server stopped `/info` and `/decrypt` load and decrypting works (Chromium and WebKit) | `e2e/offline.spec.ts` |
 
+## Owner checks for 1.1.0
+
+- [ ] Real iPhone: Compress and Encrypt a ~200 MB PDF. The bar moves, "Finishing…" shows, the download opens, and no "took too long" message appears.
+- [ ] Desktop browser: the same with a large PDF. The bar moves smoothly and the result is correct.
+- [ ] Installed PWA: after closing every tab and reopening online, the footer shows 1.1.0, and the app still works offline.
+
 ## Next versions
 
-1.1.0 (real progress bar) has a spec: [2026-10-09-progress-bar-design.md](superpowers/specs/2026-10-09-progress-bar-design.md).
-Later versions are planned in `docs/notes/`: [1.2.0](notes/1.2.0-plan.md) (page grid, Organize, images in
-Merge). When a release starts, copy its owner checks here as unticked boxes; this file stays the release gate.
+1.1.0 (real progress bar): spec [2026-10-09-progress-bar-design.md](superpowers/specs/2026-10-09-progress-bar-design.md),
+plan [2026-10-09-progress-bar.md](superpowers/plans/2026-10-09-progress-bar.md). Later versions are planned in
+`docs/notes/`: [1.2.0](notes/1.2.0-plan.md) (page grid, Organize, images in Merge). When a release starts, copy
+its owner checks here as unticked boxes; this file stays the release gate.

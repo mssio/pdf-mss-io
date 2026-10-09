@@ -33,12 +33,14 @@ src/components/RouteError.tsx  error screen; mounted on a pathless route inside 
 src/pages/NotFoundPage.tsx  catch-all "Page not found" route inside AppShell
 src/components/ui/        shadcn primitives (new-york); edit sparingly, keep tokens
 src/components/ui/secret-input.tsx  password field browsers/password managers don't save
+src/components/ui/progress.tsx  shadcn Progress; passes `value` to Radix so `aria-valuenow` is set
 src/pages/                HomePage + one <Name>Page.tsx per tool (exports `Component`)
 src/lib/qpdf.ts           getQpdf, ensureNoOpenPassword, assertOutput, describeQpdfError, logWarnings
 src/lib/use-qpdf-job.ts   busy/error state for one job; drops stale results
+src/lib/job-progress.ts   JobStatusState; turns qpdf write progress into status (drops stale jobs)
 src/lib/use-blob-url.ts   owns the download blob URL and revokes it
 src/lib/crash-guard.ts    sessionStorage note while a job runs; src/components/CrashNotice.tsx explains a mid-job reload
-src/components/JobStatus.tsx  step + elapsed time under the submit button while a job runs
+src/components/JobStatus.tsx  step + elapsed time (and a progress bar while qpdf writes) under the submit button
 src/app-version.d.ts      __APP_VERSION__ (package.json version, injected by vite.config.ts; shown in the footer)
 src/lib/*.ts              pure helpers (filename, format, limits, pdf-files, page-ranges,
                           passwords, merge-list, pdf-info), each with a *.test.ts
@@ -57,12 +59,16 @@ docs/notes/<ver>-plan.md  plans for future versions; their owner checks move int
 - Pass `File` objects. Byte inputs (`Uint8Array`/`ArrayBuffer`) are **transferred** to the worker
   and become empty; pass `bytes.slice()` if you still need them (e.g. `qpdf.info(output.slice())`
   before showing `output` as a download).
-- Run jobs through `useQpdfJob().run(async (qpdf) => …, { label: "Encrypting…", sizeBytes })`; it maps
-  errors with `describeQpdfError`, ignores results after `reset()` or unmount, shows the step via
-  `<JobStatus status={job.status} />`, and enforces two limits via `runWithTimeLimits` (`src/lib/run-job.ts`): the engine must load within
-  `ENGINE_LOAD_TIMEOUT_MS`, and the job must finish within `jobTimeoutMs(sizeBytes)` counted from then;
-  on either timeout the stuck engine is replaced (`resetQpdf()`). `label` and `sizeBytes` are required:
+- Run jobs through `useQpdfJob().run(async (qpdf, onProgress) => …, { label: "Encrypting…", sizeBytes })`; it maps
+  errors with `describeQpdfError`, ignores results and progress after `reset()` or unmount, shows the step via
+  `<JobStatus status={job.status} />`, and enforces limits via `runWithTimeLimits` (`src/lib/run-job.ts`): the engine must load within
+  `ENGINE_LOAD_TIMEOUT_MS`; the job then has `jobTimeoutMs(sizeBytes)`, except that while qpdf reports 0–99%
+  each report allows `STALL_TIMEOUT_MS` (30 s) until the next, and 100% restores `jobTimeoutMs`;
+  on any timeout the stuck engine is replaced (`resetQpdf()`). `label` and `sizeBytes` are required:
   always pass the real input size. Pass `durationMs={job.lastDurationMs}` to `ResultCard` ("Finished in m:ss.").
+- Pass `onProgress` **only** to the qpdf call that writes the download (`decrypt`, `encrypt`, `merge`,
+  `selectPages`, `compress`): never to `ensureNoOpenPassword`, `info()` or `run()`. `JobStatus` shows a bar for
+  0–99% and "Finishing…" after 100%; a second writing call would restart the bar.
 - Call `assertOutput(output)` on every output before it becomes a download. qpdf can "succeed" with
   a near-empty file when the wasm runs out of memory (seen with encrypt at 600 MB).
 - Log `warnings` with `logWarnings`; don't show them.
@@ -106,8 +112,8 @@ docs/notes/<ver>-plan.md  plans for future versions; their owner checks move int
 
 `@mssio/qpdf-wasm` 1.0.0 (qpdf 12.4.2) runs out of wasm memory on large inputs: encrypt threw
 `std::bad_alloc` at 400 MB and at 600 MB resolved with a near-empty output instead of rejecting.
-That's why `assertOutput()` guards every download and why `MAX_TOTAL_BYTES` is 250 MB. Re-check
-both if the package is upgraded.
+That's why `assertOutput()` guards every download and why `MAX_TOTAL_BYTES` is 250 MB. 1.1.0 ships the
+byte-identical `qpdf.wasm` (same SHA-256), so this still holds. Re-check both if a later upgrade changes the wasm.
 
 ## E2E tests
 

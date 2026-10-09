@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - Unreleased
+
+### Added
+
+- A progress bar while the PDF is being written (Decrypt, Encrypt, Merge, Extract pages, Compress),
+  then "Finishing…" for the last checks.
+
+### Changed
+
+- A stuck PDF engine is detected sooner: once a job reports progress, it stops after 30 seconds
+  without any.
+- `@mssio/qpdf-wasm` 1.1.0 (same qpdf 12.4.2 and the same `qpdf.wasm`; it adds progress reporting).
+
 ## [1.0.0] - 2026-10-07
 
 First release of the static, client-side PDF Toolbox (replaces the Bun server app).
