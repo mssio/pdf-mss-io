@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { formatElapsed } from "@/lib/format";
-import type { JobStatusState } from "@/lib/use-qpdf-job";
+import type { JobStatusState } from "@/lib/job-progress";
 
 const LARGE_FILE_BYTES = 50 * 1024 * 1024;
 
