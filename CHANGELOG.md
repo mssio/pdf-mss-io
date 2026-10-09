@@ -12,6 +12,8 @@ All notable changes to this project are documented here. The format follows
   then "Finishing…" for the last checks.
 - While online, the app checks for a newer version and offers to update ("Update available"); "Later"
   keeps an update button in the footer. It never reloads while a file is being processed.
+- On phones, a banner offers to add PDF Toolbox to the home screen: an Install button on Android, and
+  step-by-step pages with screenshots on iPhone.
 - The footer shows whether the app is ready to use offline; while it is still downloading, "/offline"
   shows the progress. The first visit works offline as soon as the download finishes.
 

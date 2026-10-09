@@ -41,4 +41,8 @@ test("after the first visit the app works with the server gone", async ({ page }
   await page.goto(`${origin}/offline`);
   await expect(page.getByRole("heading", { name: "Ready offline" })).toBeVisible();
   await expect(page.getByText("PDF engine: downloaded")).toBeVisible();
+  await page.goto(`${origin}/install/3`);
+  const shot = page.locator("main img");
+  await expect(shot).toBeVisible();
+  expect(await shot.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
 });

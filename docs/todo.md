@@ -38,6 +38,7 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 | While qpdf writes, a progress bar rises (0–99%, never inside the announced status), then the result; checked for Compress and Encrypt on a 20 MB, 400-page PDF and verified with `inspectPdf` | `e2e/job-safeguard.spec.ts` |
 | Info shows no progress bar | `e2e/info.spec.ts` |
 | Footer shows "Ready offline" once installed and "/offline" shows it while offline; with no service worker it says "Not available offline yet" | `e2e/offline.spec.ts`, `e2e/shell.spec.ts` |
+| Install banner: iPhone → How walks five step pages with full screenshots (Back/Next/Done, browser back), Not now remembered; Android → Install prompts once; none on desktop, in the installed app or during a job | `e2e/install.spec.ts` |
 | Update prompt: a new deployment shows "Update available"; Later moves it to the footer button, which updates; an update during a job waits until the job is done | `e2e/update.spec.ts` |
 | A job cut off by a page reload is explained once after the reload ("The page reloaded while a file was being processed…"), and a finished job leaves no notice | `e2e/phone.spec.ts` |
 | Offline: service worker active and wasm cached, then with the server stopped `/info` and `/decrypt` load and decrypting works (Chromium and WebKit) | `e2e/offline.spec.ts` |
@@ -49,6 +50,7 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 - [ ] Update prompt on the iPhone: with the app installed from a test build, serve a newer test build. Within a minute of returning to the app, "Update available" shows; Later puts "Update to the latest version" in the footer; updating shows the new build code in the footer.
 - [ ] Fresh install on the iPhone (site data cleared): the footer goes "Downloading for offline use… n%" → "Ready offline"; then offline, every tool opens and Decrypt works.
 - [ ] iPhone, 200 MB PDF (the new phone limit), offline and online: Encrypt, Compress and Decrypt each finish with a download, and a 245 MB PDF is refused with "On phones, files must be 200 MB or less…". (2026-10-09: at 245 MB Encrypt and Decrypt crashed the page, Compress worked; Encrypt at 200 MB worked, so PHONE_MAX_BYTES is now 200 MB.)
+- [ ] iPhone Safari (not installed): the install banner shows; How's five steps match what Safari shows; once added, the app shows no banner.
 - [ ] Installed PWA: after closing every tab and reopening online, the footer shows 1.1.0, and the app still works offline.
 
 ## Next versions

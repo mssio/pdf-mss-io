@@ -2,6 +2,7 @@ import { Moon, Sun } from "lucide-react";
 import { Link, Outlet } from "react-router";
 
 import { CrashNotice } from "@/components/CrashNotice";
+import { InstallBanner } from "@/components/InstallBanner";
 import { OfflineStatusLink } from "@/components/OfflineStatusLink";
 import { UpdateDialog, UpdateFooterButton } from "@/components/UpdatePrompt";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ export function AppShell() {
         </div>
       </header>
       <main className="flex-1">
+        <InstallBanner />
         <CrashNotice />
         <Outlet />
       </main>

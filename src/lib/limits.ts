@@ -37,11 +37,15 @@ const PHONE_QUERIES = [
   "(pointer: coarse) and (max-height: 500px)", // phone held sideways: wide, but short
 ];
 
+/** A small touch screen in either orientation. */
+export function hasSmallTouchScreen(): boolean {
+  return typeof matchMedia === "function" && PHONE_QUERIES.some((query) => matchMedia(query).matches);
+}
+
 /** A small touch screen in either orientation, or a device that reports little memory (Chromium's deviceMemory). */
 export function isLikelyPhone(): boolean {
   if (typeof navigator === "undefined") return false;
-  const smallTouchScreen =
-    typeof matchMedia === "function" && PHONE_QUERIES.some((query) => matchMedia(query).matches);
+  const smallTouchScreen = hasSmallTouchScreen();
   const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   return smallTouchScreen || (typeof memory === "number" && memory <= 4);
 }

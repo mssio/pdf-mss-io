@@ -45,7 +45,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,wasm,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,wasm,webmanifest,webp}'],
         // qpdf.wasm is ~2.2 MB, above Workbox's 2 MiB default; without this the build fails.
         maximumFileSizeToCacheInBytes: 3_000_000,
         navigateFallback: '/index.html',
