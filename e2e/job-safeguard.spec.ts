@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { chooseFiles, download, inspectPdf } from "./helpers";
+import { chooseFiles, download, inspectPdf, type RecordedProgress, recordedProgress, recordProgress } from "./helpers";
 
 /** Makes the PDF engine hang: its worker script is requested but never answered. */
 async function hangEngine(page: Page) {
@@ -51,5 +51,39 @@ test("a running job shows a step and a timer", async ({ page }) => {
   await chooseFiles(page, "plain.pdf");
   await page.getByRole("button", { name: "Compress", exact: true }).click();
   await engineLoaded;
-  await expect(page.getByText(/^(Loading the PDF engine…|Compressing…) \d+:\d\d$/)).toBeVisible();
+  await expect(page.getByText(/^(Loading the PDF engine…|Compressing…|Finishing…) \d+:\d\d$/)).toBeVisible();
+});
+
+/** The bar showed, its values only rose, at least one sat between 1 and 99, and it was never announced. */
+function expectRisingBar({ values, insideLiveRegion }: RecordedProgress) {
+  expect(values.length).toBeGreaterThan(0);
+  expect(values.every((percent, i) => i === 0 || percent > values[i - 1])).toBe(true);
+  expect(values.every((percent) => percent >= 0 && percent <= 99)).toBe(true);
+  expect(values.some((percent) => percent >= 1 && percent <= 99)).toBe(true);
+  expect(insideLiveRegion).toBe(false);
+}
+
+test("compressing shows a rising progress bar, then the result", async ({ page }) => {
+  await recordProgress(page);
+  await page.goto("/compress");
+  await chooseFiles(page, "twenty-mb.pdf");
+  await page.getByRole("button", { name: "Compress", exact: true }).click();
+  await expect(page.getByText("Your PDF is smaller")).toBeVisible();
+  expectRisingBar(await recordedProgress(page));
+  await expect(page.getByRole("progressbar")).toHaveCount(0);
+  const file = await download(page, "Download compressed PDF");
+  expect(await inspectPdf(file.path)).toMatchObject({ pageCount: 400, encrypted: false });
+});
+
+test("encrypting shows a rising progress bar, then the result", async ({ page }) => {
+  await recordProgress(page);
+  await page.goto("/encrypt");
+  await chooseFiles(page, "twenty-mb.pdf");
+  await page.getByLabel("Password to open", { exact: true }).fill("secret");
+  await page.getByLabel("Confirm password", { exact: true }).fill("secret");
+  await page.getByRole("button", { name: "Encrypt", exact: true }).click();
+  await expect(page.getByText("Your PDF is protected")).toBeVisible();
+  expectRisingBar(await recordedProgress(page));
+  const file = await download(page, "Download protected PDF");
+  expect(await inspectPdf(file.path, "secret")).toMatchObject({ pageCount: 400, encrypted: true });
 });

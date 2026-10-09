@@ -52,3 +52,28 @@ export async function tabTo(page: Page, target: Locator, maxTabs = 40): Promise<
   }
   await expect(target, `not reachable with ${maxTabs} Tab presses`).toBeFocused();
 }
+
+export type RecordedProgress = { values: number[]; insideLiveRegion: boolean };
+
+/**
+ * Records every value the job progress bar shows (deduplicated, in order) and whether the bar ever sat
+ * inside an aria-live region. Call before page.goto; read with recordedProgress(). Recording avoids
+ * racing a bar that may only be visible for a fraction of a second.
+ */
+export async function recordProgress(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const record = { values: [] as number[], insideLiveRegion: false };
+    Object.assign(window, { __progress: record });
+    new MutationObserver(() => {
+      const bar = document.querySelector('[role="progressbar"]');
+      const value = bar?.getAttribute("aria-valuenow");
+      if (!bar || value == null) return;
+      if (bar.closest("[aria-live]")) record.insideLiveRegion = true;
+      if (Number(value) !== record.values.at(-1)) record.values.push(Number(value));
+    }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-valuenow"] });
+  });
+}
+
+export async function recordedProgress(page: Page): Promise<RecordedProgress> {
+  return page.evaluate(() => (window as unknown as { __progress: RecordedProgress }).__progress);
+}
