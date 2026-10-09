@@ -68,7 +68,7 @@ test("a new deployment is offered; Later moves it to the footer, which updates",
   }
 });
 
-test("an update that arrives during a job waits until the job is done", async ({ page }) => {
+test("an update that arrives during a job waits until the job and its result are done", async ({ page }) => {
   const site = await servedCopy();
   try {
     await spaceOutProgress(page, { gapMs: 80 }); // the Compress below takes ~8 s
@@ -84,10 +84,62 @@ test("an update that arrives during a job waits until the job is done", async ({
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
 
     await expect(page.getByText("Your PDF is smaller")).toBeVisible({ timeout: 30_000 });
+    // The result is still on screen, so the dialog keeps waiting; the footer button now works.
+    await expect(page.getByRole("button", { name: "Update to the latest version" })).toBeEnabled();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await page.getByRole("button", { name: "Compress another file" }).click();
     const dialog = page.getByRole("alertdialog", { name: "Update available" });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Update now" }).click();
     await expect.poll(() => runsNewVersion(page), { timeout: 15_000 }).toBe(1);
+  } finally {
+    await site.stop();
+  }
+});
+
+test("Update now also reloads a page that had no worker in control when it loaded (first visit)", async ({ page }) => {
+  const site = await servedCopy();
+  try {
+    await page.goto(`${site.origin}/`);
+    // No reload: clientsClaim puts the first visit under the worker's control.
+    await page.waitForFunction(() => navigator.serviceWorker.controller !== null, undefined, { timeout: 15_000 });
+    await deployNewVersion(site.dir);
+    await comeBackOnline(page);
+
+    const dialog = page.getByRole("alertdialog", { name: "Update available" });
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await dialog.getByRole("button", { name: "Update now" }).click();
+    await expect.poll(() => runsNewVersion(page), { timeout: 15_000 }).toBe(1);
+  } finally {
+    await site.stop();
+  }
+});
+
+test("Update now in one tab never reloads another tab mid-job or over its result", async ({ page, context }) => {
+  const site = await servedCopy();
+  try {
+    await openInstalled(page, `${site.origin}/`);
+    const busy = await context.newPage();
+    await spaceOutProgress(busy, { gapMs: 80 }); // the Compress below takes ~8 s
+    await busy.goto(`${site.origin}/compress`);
+    await chooseFiles(busy, "twenty-mb.pdf");
+    await busy.getByRole("button", { name: "Compress", exact: true }).click();
+    await expect(busy.getByRole("progressbar")).toBeVisible();
+
+    await deployNewVersion(site.dir);
+    await comeBackOnline(page);
+    const dialog = page.getByRole("alertdialog", { name: "Update available" });
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await dialog.getByRole("button", { name: "Update now" }).click();
+    await expect.poll(() => runsNewVersion(page), { timeout: 15_000 }).toBe(1);
+
+    // The busy tab finishes its job and keeps its result on screen until the user moves on.
+    await expect(busy.getByText("Your PDF is smaller")).toBeVisible({ timeout: 30_000 });
+    await busy.waitForTimeout(1500); // longer than the reload's settle time
+    await expect(busy.getByText("Your PDF is smaller")).toBeVisible();
+    expect(await runsNewVersion(busy)).toBe(0);
+    await busy.getByRole("button", { name: "Compress another file" }).click();
+    await expect.poll(() => runsNewVersion(busy), { timeout: 15_000 }).toBe(1);
   } finally {
     await site.stop();
   }

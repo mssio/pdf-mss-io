@@ -261,6 +261,16 @@ Hashed files under `assets/` can be cached forever. Browsers bypass their own HT
 - **During a job nothing interrupts.** If the update becomes ready while a job runs, the dialog waits
   until the job ends. The footer button is disabled while a job runs. (A reload mid-job would lose the
   work and trigger the crash notice.)
+- **A result on screen isn't interrupted either** (owner review, 2026-10-09): while a download is shown
+  (`useBlobUrl` holds one), the dialog waits until the user moves on ("… another file", Back to home).
+  The footer button stays usable: tapping it is the user's own choice.
+- **Every tab reloads safely.** Activating the update switches all open tabs. Each tab reloads itself
+  (`createUpdateReload` in `src/lib/update-check.ts`) once nothing is in progress: it waits for a running
+  job and, unless the user tapped Update now in that tab, for a result on screen, and only after things
+  stayed quiet for 0.5 s (a job ends a moment before its download shows). Pages that had no controlling
+  worker when they loaded (the first visit, a hard reload) reload on `controllerchange` while an update
+  was waiting: vite-plugin-pwa 2.0's own reload only covers pages that were controlled at load, and it
+  ignores `updateServiceWorker`'s `reloadPage` argument.
 - **Offline:** no checks. Coming back online triggers one.
 - Closing every tab still works: the next launch already uses the new version.
 - Copy (the only new strings): "Update available", the sentence above, "Later", "Update now",

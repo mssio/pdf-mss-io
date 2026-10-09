@@ -111,8 +111,9 @@ docs/notes/<ver>-plan.md  plans for future versions; their owner checks move int
 - `vite-plugin-pwa` (`vite.config.ts`) uses `registerType: 'prompt'`. `useAppUpdate` (`src/lib/use-app-update.ts`,
   mounted by `AppShell`) registers the worker and checks for a new deployment while online: hourly, on `online`, and
   on returning to the foreground at most once a minute (`src/lib/update-check.ts`). A downloaded update shows the
-  "Update available" dialog; Later moves it to a footer button. Nothing reloads while a job runs
-  (`src/lib/job-activity.ts`). Closing every tab and reopening still picks up a new version.
+  "Update available" dialog; Later moves it to a footer button. Nothing reloads while a job runs, and the
+  dialog also waits while a download is on screen (`src/lib/job-activity.ts`). Every tab reloads itself through
+  `createUpdateReload` (vite-plugin-pwa 2.0 only reloads pages that were controlled at load). Closing every tab and reopening still picks up a new version.
 - Hosting: `sw.js` and `index.html` must not be long-cached by a CDN (`Cache-Control: no-cache` or a short edge
   cache), or the update check sees a stale version. Hashed `assets/` files can be cached forever.
 - `clientsClaim: true`: the first install controls the open page as soon as it finishes. The footer shows the

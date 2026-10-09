@@ -1,8 +1,10 @@
 /**
- * Whether any qpdf job is running in this tab. The update prompt reads it: updating reloads the page,
- * which must never happen mid-job. useQpdfJob reports starts and finishes.
+ * Whether any qpdf job is running in this tab, and whether a finished job's download is still on screen.
+ * The update prompt reads both: updating reloads the page, which must never lose a job or its result.
+ * useQpdfJob reports jobs; useBlobUrl reports shown downloads.
  */
 let running = 0;
+let results = 0;
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((listener) => listener());
 
@@ -18,6 +20,20 @@ export function jobFinished(): void {
 
 export function isJobRunning(): boolean {
   return running > 0;
+}
+
+export function resultShown(): void {
+  results++;
+  notify();
+}
+
+export function resultCleared(): void {
+  results = Math.max(0, results - 1);
+  notify();
+}
+
+export function hasUnsavedResult(): boolean {
+  return results > 0;
 }
 
 export function subscribeJobActivity(listener: () => void): () => void {

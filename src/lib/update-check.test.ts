@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
   checkForUpdate,
+  createUpdateReload,
   shouldShowUpdatePrompt,
   startUpdateChecks,
   UPDATE_CHECK_INTERVAL_MS,
@@ -120,12 +121,79 @@ describe("checkForUpdate", () => {
 });
 
 describe("shouldShowUpdatePrompt", () => {
-  test("only for a ready update that wasn't dismissed, and never during a job", () => {
+  test("only for a ready update that wasn't dismissed, never during a job or over an unsaved result", () => {
     for (const updateReady of [false, true])
       for (const dismissed of [false, true])
         for (const jobRunning of [false, true])
-          expect(shouldShowUpdatePrompt({ updateReady, dismissed, jobRunning })).toBe(
-            updateReady && !dismissed && !jobRunning,
-          );
+          for (const resultShown of [false, true])
+            expect(shouldShowUpdatePrompt({ updateReady, dismissed, jobRunning, resultShown })).toBe(
+              updateReady && !dismissed && !jobRunning && !resultShown,
+            );
+  });
+});
+
+describe("createUpdateReload", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function setup(busy: boolean) {
+    const state = { busy };
+    const listeners = new Set<() => void>();
+    const reload = vi.fn();
+    const request = createUpdateReload({
+      reload,
+      isBusy: () => state.busy,
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    });
+    const settle = (next: boolean) => {
+      state.busy = next;
+      [...listeners].forEach((listener) => listener());
+    };
+    return { request, reload, settle, listeners };
+  }
+
+  test("reloads at once when nothing is in progress", () => {
+    const { request, reload } = setup(false);
+    request();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  test("waits until the job or unsaved result is gone, then reloads once", () => {
+    const { request, reload, settle, listeners } = setup(true);
+    request();
+    expect(reload).not.toHaveBeenCalled();
+    settle(true);
+    expect(reload).not.toHaveBeenCalled();
+    settle(false);
+    expect(reload).not.toHaveBeenCalled(); // quiet must last a moment first
+    vi.advanceTimersByTime(500);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(listeners.size).toBe(0);
+  });
+
+  test("a job ending just before its result shows doesn't slip a reload in between", () => {
+    const { request, reload, settle } = setup(true);
+    request();
+    settle(false); // the job finished…
+    vi.advanceTimersByTime(10);
+    settle(true); // …and its download appeared a moment later
+    vi.advanceTimersByTime(1000);
+    expect(reload).not.toHaveBeenCalled();
+    settle(false);
+    vi.advanceTimersByTime(500);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  test("repeated requests (the plugin's listener and ours) reload only once", () => {
+    const { request, reload, settle } = setup(true);
+    request();
+    request();
+    settle(false);
+    vi.advanceTimersByTime(500);
+    request();
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 });

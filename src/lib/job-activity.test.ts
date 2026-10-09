@@ -1,6 +1,14 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { isJobRunning, jobFinished, jobStarted, subscribeJobActivity } from "@/lib/job-activity";
+import {
+  hasUnsavedResult,
+  isJobRunning,
+  jobFinished,
+  jobStarted,
+  resultCleared,
+  resultShown,
+  subscribeJobActivity,
+} from "@/lib/job-activity";
 
 // The store is module state: every test leaves it idle again.
 describe("job activity", () => {
@@ -39,5 +47,21 @@ describe("job activity", () => {
     jobStarted();
     jobFinished();
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  test("a shown download counts as unsaved until it is cleared, and subscribers hear it", () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeJobActivity(listener);
+    expect(hasUnsavedResult()).toBe(false);
+    resultShown();
+    expect(hasUnsavedResult()).toBe(true);
+    resultCleared();
+    resultCleared(); // an extra clear never goes below zero
+    expect(hasUnsavedResult()).toBe(false);
+    resultShown();
+    expect(hasUnsavedResult()).toBe(true);
+    resultCleared();
+    expect(listener).toHaveBeenCalledTimes(5);
+    unsubscribe();
   });
 });

@@ -65,15 +65,58 @@ export async function checkForUpdate(
   if (response?.status === 200) await registration.update();
 }
 
-/** The dialog shows for a ready update the user hasn't put off, and never while a job runs (updating reloads). */
+/**
+ * The dialog shows for a ready update the user hasn't put off, never while a job runs and never over a
+ * result that is still on screen (updating reloads, which would lose both).
+ */
 export function shouldShowUpdatePrompt({
   updateReady,
   dismissed,
   jobRunning,
+  resultShown,
 }: {
   updateReady: boolean;
   dismissed: boolean;
   jobRunning: boolean;
+  resultShown: boolean;
 }): boolean {
-  return updateReady && !dismissed && !jobRunning;
+  return updateReady && !dismissed && !jobRunning && !resultShown;
+}
+
+/**
+ * The reload after a new version takes control. Returns `request()`: it reloads at once when nothing is
+ * in progress, otherwise once `isBusy()` has stayed false for `settleMs` (a job ends a moment before its
+ * download shows, and neither counts as busy in between), and only ever once (both the plugin's
+ * listener and our own controllerchange listener may ask).
+ */
+export function createUpdateReload({
+  reload,
+  isBusy,
+  subscribe,
+  settleMs = 500,
+}: {
+  reload: () => void;
+  isBusy: () => boolean;
+  subscribe: (listener: () => void) => () => void;
+  settleMs?: number;
+}): () => void {
+  let requested = false;
+  return () => {
+    if (requested) return;
+    requested = true;
+    if (!isBusy()) {
+      reload();
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = subscribe(() => {
+      clearTimeout(timer);
+      if (isBusy()) return;
+      timer = setTimeout(() => {
+        if (isBusy()) return;
+        unsubscribe();
+        reload();
+      }, settleMs);
+    });
+  };
 }

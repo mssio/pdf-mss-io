@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { guardDownload } from "@/lib/crash-guard";
+import { resultCleared, resultShown } from "@/lib/job-activity";
 import { shouldReleaseEngine } from "@/lib/qpdf";
 
 export type PdfDownload = { url: string; filename: string };
@@ -11,7 +12,11 @@ export function useBlobUrl() {
 
   useEffect(() => {
     if (!download) return;
-    return () => URL.revokeObjectURL(download.url);
+    resultShown(); // the update prompt waits while a download is on screen
+    return () => {
+      resultCleared();
+      URL.revokeObjectURL(download.url);
+    };
   }, [download]);
 
   const show = useCallback((bytes: Uint8Array<ArrayBuffer>, filename: string) => {
