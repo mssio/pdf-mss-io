@@ -2709,7 +2709,7 @@ git push
 
 ## Install banner (Task 14), added 2026-10-09
 
-Spec section 10 is the authority. Phones only. The five screenshots are already committed in `public/install/` (personal details removed, address shown as `pdf.mss.io`).
+Spec section 10 is the authority. Phones only. **Prerequisite:** the five full-iPhone screenshots (spec §10 "Screenshots") are processed and committed to `public/install/` before Step 5. The owner retakes them into `.private/`; the edits (clean status bar, `pdf.mss.io`, blurred contacts/apps/dock) are done with ImageMagick and checked by eye. The originals are deleted from `.private/` afterwards.
 
 **Extra global constraints:**
 - Strings, exactly:
@@ -3031,7 +3031,7 @@ import { useInstallBanner } from "@/lib/use-install-banner";
 export function InstallBanner() {
   const { kind, install, dismiss } = useInstallBanner();
   const { pathname } = useLocation();
-  if (!kind || pathname === "/install") return null;
+  if (!kind || pathname.startsWith("/install")) return null;
   return (
     <div className="mx-auto max-w-lg px-4 pt-4 sm:px-6">
       <section
@@ -3067,27 +3067,33 @@ export function InstallBanner() {
 Create `src/pages/InstallPage.tsx`:
 
 ```tsx
-import { Link } from "react-router";
+import { Link, useParams } from "react-router";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 const STEPS = [
   {
     text: <>In Safari, tap the menu button at the left of the address bar.</>,
+    note: "On older iPhones the Share button is at the bottom of the screen.",
     image: "/install/ios-1-menu.webp",
-    alt: "Safari's address bar at the bottom of the screen, with the menu button at its left circled.",
+    alt: "Safari showing PDF Toolbox at pdf.mss.io, with the menu button at the left of the address bar circled.",
   },
-  { text: <>Tap <strong>Share</strong>.</>, image: "/install/ios-2-share.webp", alt: "Safari's menu with Share highlighted." },
+  {
+    text: <>Tap <strong>Share</strong>.</>,
+    image: "/install/ios-2-share.webp",
+    alt: "Safari's menu open over the page, with Share circled.",
+  },
   {
     text: <>Scroll down and tap <strong>Add to Home Screen</strong>.</>,
     image: "/install/ios-3-add-to-home-screen.webp",
-    alt: "The share sheet's list of actions, with Add to Home Screen highlighted at the bottom.",
+    alt: "The share sheet scrolled down, with Add to Home Screen circled at the bottom.",
   },
   {
     text: <>Keep <strong>Open as Web App</strong> on and tap <strong>Add</strong>.</>,
     image: "/install/ios-4-add.webp",
-    alt: "The Add to Home Screen screen for PDF Toolbox at pdf.mss.io, with the Add button highlighted.",
+    alt: "The Add to Home Screen screen for PDF Toolbox at pdf.mss.io, with the Add button circled.",
   },
   {
     text: (
@@ -3097,35 +3103,69 @@ const STEPS = [
       </>
     ),
     image: "/install/ios-5-home-screen.webp",
-    alt: "The PDF Toolbox icon on the Home Screen.",
+    alt: "The Home Screen with the PDF Toolbox icon circled.",
   },
 ];
 
-/** /install: how to add the app to an iPhone's Home Screen, with screenshots. */
+/** /install/:step — how to add the app to an iPhone's Home Screen, one step per page. */
 export function Component() {
+  const { step } = useParams();
+  const parsed = Number(step);
+  const number = Number.isInteger(parsed) && parsed >= 1 && parsed <= STEPS.length ? parsed : 1;
+  const current = STEPS[number - 1];
+  const last = number === STEPS.length;
+
   return (
-    <div className="mx-auto max-w-lg px-4 py-10 sm:px-6 sm:py-14">
+    <div className="mx-auto max-w-lg px-4 py-6 sm:px-6 sm:py-10">
       <Card>
         <CardHeader>
           <CardTitle>
             <h1>Add PDF Toolbox to your Home Screen</h1>
           </CardTitle>
+          <CardDescription>
+            Step {number} of {STEPS.length}
+          </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-6">
-          <ol className="grid gap-6">
-            {STEPS.map((step, index) => (
-              <li key={step.image} className="grid gap-2">
-                <p className="text-sm">
-                  <span className="font-semibold">{index + 1}.</span> {step.text}
-                </p>
-                <img src={step.image} alt={step.alt} width={600} className="w-full rounded-md border" />
+        <CardContent className="grid gap-4">
+          <p className="text-sm">{current.text}</p>
+          {current.note ? <p className="text-xs text-muted-foreground">{current.note}</p> : null}
+          {/* A phone-shaped frame so the screenshot reads as a whole iPhone screen. */}
+          <div className="mx-auto w-fit rounded-[2.25rem] border-4 border-foreground bg-foreground p-1 shadow-md">
+            <img
+              src={current.image}
+              alt={current.alt}
+              width={600}
+              height={1304}
+              className="block h-auto max-h-[60svh] w-auto rounded-[1.9rem]"
+            />
+          </div>
+          <ol aria-label="Steps" className="flex justify-center gap-2">
+            {STEPS.map((_, index) => (
+              <li key={index}>
+                <Link
+                  to={`/install/${index + 1}`}
+                  aria-label={`Step ${index + 1}`}
+                  aria-current={index + 1 === number ? "step" : undefined}
+                  className={cn(
+                    "block size-2.5 rounded-full bg-muted-foreground/30",
+                    index + 1 === number && "bg-foreground",
+                  )}
+                />
               </li>
             ))}
           </ol>
-          <p className="text-sm text-muted-foreground">On older iPhones the Share button is at the bottom of the screen.</p>
-          <Button className="w-full sm:w-auto" asChild>
-            <Link to="/">Back to home</Link>
-          </Button>
+          <div className="flex justify-between gap-2">
+            {number > 1 ? (
+              <Button variant="outline" asChild>
+                <Link to={`/install/${number - 1}`}>Back</Link>
+              </Button>
+            ) : (
+              <span />
+            )}
+            <Button asChild>
+              <Link to={last ? "/" : `/install/${number + 1}`}>{last ? "Done" : "Next"}</Link>
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -3133,7 +3173,7 @@ export function Component() {
 }
 ```
 
-In `src/router.ts`, add before the `/offline` route: `{ path: "/install", lazy: () => import("@/pages/InstallPage") },`.
+In `src/router.ts`, add before the `/offline` route: `{ path: "/install/:step?", lazy: () => import("@/pages/InstallPage") },`.
 
 In `src/components/AppShell.tsx`, import `InstallBanner` and render `<InstallBanner />` as the first child of `<main>`, before `<CrashNotice />`.
 
@@ -3165,18 +3205,33 @@ test.describe("on an iPhone", () => {
   const { userAgent, viewport, deviceScaleFactor, isMobile, hasTouch } = devices["iPhone 15"];
   test.use({ userAgent, viewport, deviceScaleFactor, isMobile, hasTouch });
 
-  test("How shows the steps with screenshots; Not now hides the banner for good", async ({ page }) => {
+  test("How walks through five step pages with full screenshots", async ({ page }) => {
     await page.goto("/");
     await expect(banner(page)).toContainText("Add PDF Toolbox to your Home Screen");
     await banner(page).getByRole("link", { name: "How" }).click();
     await expect(page.getByRole("heading", { name: "Add PDF Toolbox to your Home Screen" })).toBeVisible();
     await expect(banner(page)).toHaveCount(0);
-    const images = page.locator("main ol img");
-    await expect(images).toHaveCount(5);
-    for (const image of await images.all()) {
-      await expect(image).toHaveJSProperty("complete", true);
-      expect(await image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+    for (let step = 1; step <= 5; step++) {
+      await expect(page.getByText(`Step ${step} of 5`)).toBeVisible();
+      const shot = page.locator("main img");
+      await expect(shot).toHaveJSProperty("complete", true);
+      expect(await shot.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+      await expect(shot).toBeInViewport({ ratio: 1 }); // the whole phone fits on screen
+      await expect(page.getByRole("link", { name: `Step ${step}` })).toHaveAttribute("aria-current", "step");
+      if (step < 5) await page.getByRole("link", { name: "Next" }).click();
     }
+    await page.getByRole("link", { name: "Back" }).click();
+    await expect(page.getByText("Step 4 of 5")).toBeVisible();
+    await page.goBack();
+    await expect(page.getByText("Step 5 of 5")).toBeVisible();
+    await page.getByRole("link", { name: "Done" }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await page.goto("/install/9");
+    await expect(page.getByText("Step 1 of 5")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Back" })).toHaveCount(0);
+  });
+
+  test("Not now hides the banner, also after a reload", async ({ page }) => {
     await page.goto("/");
     await banner(page).getByRole("button", { name: "Not now" }).click();
     await expect(banner(page)).toHaveCount(0);
@@ -3228,8 +3283,8 @@ test("desktop never shows the banner, even when the browser offers to install", 
 In `e2e/offline.spec.ts`, after the `/offline` assertions add:
 
 ```ts
-  await page.goto(`${origin}/install`);
-  const shot = page.locator("main ol img").first();
+  await page.goto(`${origin}/install/3`);
+  const shot = page.locator("main img");
   await expect(shot).toBeVisible();
   expect(await shot.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
 ```
@@ -3239,9 +3294,9 @@ Expected: PASS. Then prove the desktop test can fail: temporarily make `installB
 
 - [ ] **Step 6: Docs**
 
-- `AGENTS.md` Map: `src/lib/install-banner.ts` (pure: who sees the install banner), `src/lib/use-install-banner.ts` (captures beforeinstallprompt), `src/components/InstallBanner.tsx`, `src/pages/InstallPage.tsx` (/install with screenshots in `public/install/`). PWA notes: `webp` is precached; the screenshots must never show personal details (crop the status bar, contacts, other apps; the address must read `pdf.mss.io`).
+- `AGENTS.md` Map: `src/lib/install-banner.ts` (pure: who sees the install banner), `src/lib/use-install-banner.ts` (captures beforeinstallprompt), `src/components/InstallBanner.tsx`, `src/pages/InstallPage.tsx` (/install/:step, one step per page, screenshots in `public/install/`). PWA notes: `webp` is precached; the screenshots must never show personal details (crop the status bar, contacts, other apps; the address must read `pdf.mss.io`).
 - `CHANGELOG.md` 1.1.0 → Added: `- On phones, a banner offers to add PDF Toolbox to the home screen: an Install button on Android, step-by-step screenshots on iPhone.`
-- `docs/todo.md`: automated row `| Install banner: iPhone → How with five screenshots, Not now remembered; Android → Install prompts once; none on desktop, in the installed app or during a job | \`e2e/install.spec.ts\` |`; owner box `- [ ] iPhone Safari (not installed): the banner shows; How's steps match what Safari shows; once added, the app shows no banner.`
+- `docs/todo.md`: automated row `| Install banner: iPhone → How walks five step pages with full screenshots (Back/Next/Done, browser back), Not now remembered; Android → Install prompts once; none on desktop, in the installed app or during a job | \`e2e/install.spec.ts\` |`; owner box `- [ ] iPhone Safari (not installed): the banner shows; How's steps match what Safari shows; once added, the app shows no banner.`
 
 - [ ] **Step 7: Full check, commit, push**
 
