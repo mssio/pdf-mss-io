@@ -192,3 +192,12 @@ in git, so deleting them can't be undone:
 
 Commit each logical change and push right away on a feature branch, not `main`. Merging to `main`,
 tagging and creating releases need the owner's go-ahead.
+
+Release order (owner, 2026-10-09). No separate post-release PR:
+
+1. When every owner check in `docs/todo.md` is ticked, do the cleanup **inside the release PR**: README's
+   current version and release line, `docs/todo.md` (record the release, remove its ticked owner checks,
+   point "Next versions" at the next plan), the spec's status, CHANGELOG date. Propose the `.private/`
+   cleanup list (see above).
+2. The owner merges the PR.
+3. Delete the merged branches, then tag (`git tag -a vX.Y.Z -m "PDF Toolbox X.Y.Z"` on the merge commit).
