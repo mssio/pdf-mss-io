@@ -47,11 +47,11 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 
 - [x] Real iPhone: Compress and Encrypt a ~200 MB PDF. The bar moves, "Finishing…" shows, the download opens, and no "took too long" message appears.
 - [x] Desktop browser: the same with a large PDF. The bar moves smoothly and the result is correct.
-- [ ] Update prompt on the iPhone: with the app installed from a test build, serve a newer test build. Within a minute of returning to the app, "Update available" shows; Later puts "Update to the latest version" in the footer; updating shows the new build code in the footer.
-- [ ] Fresh install on the iPhone (site data cleared): the footer goes "Downloading for offline use… n%" → "Ready offline"; then offline, every tool opens and Decrypt works.
-- [ ] iPhone, 200 MB PDF (the new phone limit), offline and online: Encrypt, Compress and Decrypt each finish with a download, and a 245 MB PDF is refused with "On phones, files must be 200 MB or less…". (2026-10-09: at 245 MB Encrypt and Decrypt crashed the page, Compress worked; Encrypt at 200 MB worked, so PHONE_MAX_BYTES is now 200 MB.)
-- [ ] iPhone Safari (not installed): the install banner shows; How's five steps match what Safari shows; once added, the app shows no banner.
-- [ ] Installed PWA: after closing every tab and reopening online, the footer shows 1.1.0, and the app still works offline.
+- [x] Update prompt on the iPhone: with the app installed from a test build, serve a newer test build. Within a minute of returning to the app, "Update available" shows; Later puts "Update to the latest version" in the footer; updating shows the new build code in the footer.
+- [x] Fresh install on the iPhone (site data cleared): the footer goes "Downloading for offline use… n%" → "Ready offline"; then offline, every tool opens and Decrypt works.
+- [x] iPhone, 200 MB PDF (the new phone limit), offline and online: Encrypt, Compress and Decrypt each finish with a download, and a 245 MB PDF is refused with "On phones, files must be 200 MB or less…". (2026-10-09: at 245 MB Encrypt and Decrypt crashed the page, Compress worked; Encrypt at 200 MB worked, so PHONE_MAX_BYTES is now 200 MB.)
+- [x] iPhone Safari (not installed): the install banner shows; How's five steps match what Safari shows; once added, the app shows no banner.
+- [x] Installed PWA: after closing every tab and reopening online, the footer shows 1.1.0, and the app still works offline.
 
 ## Next versions
 
