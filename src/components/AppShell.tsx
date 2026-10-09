@@ -2,6 +2,7 @@ import { Moon, Sun } from "lucide-react";
 import { Link, Outlet } from "react-router";
 
 import { CrashNotice } from "@/components/CrashNotice";
+import { OfflineStatusLink } from "@/components/OfflineStatusLink";
 import { UpdateDialog, UpdateFooterButton } from "@/components/UpdatePrompt";
 import { Button } from "@/components/ui/button";
 import { useAppUpdate } from "@/lib/use-app-update";
@@ -54,6 +55,7 @@ export function AppShell() {
         {update.updateReady && !update.promptOpen ? (
           <UpdateFooterButton disabled={update.jobRunning} onUpdate={update.updateNow} />
         ) : null}
+        <OfflineStatusLink />
       </footer>
       <UpdateDialog open={update.promptOpen} onLater={update.later} onUpdate={update.updateNow} />
     </div>

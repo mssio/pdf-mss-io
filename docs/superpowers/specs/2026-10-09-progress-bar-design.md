@@ -327,6 +327,12 @@ engine (separate, on-demand files) can't load. Nothing tells the user. Also, wit
 the first visit never comes under the worker's control, even after the download finishes; only the
 next launch does.
 
+Confirmed by the owner's screenshot (2026-10-09): offline, the Encrypt page showed "Something went
+wrong / This page couldn't load" while the footer read `Version 1.1.0 · test 5ab1b63`. The shell was the
+current build, so it came from Safari's HTTP cache; a controlling worker would have served the tool's
+chunk too (and an older controlling worker would have served an older shell). The worker was not in
+control.
+
 ### Behavior
 
 - **`clientsClaim: true`** in the Workbox options: the first install takes control of the open page as
@@ -351,6 +357,8 @@ next launch does.
   connection." For `unsupported`: "This address can't keep files for offline use. Open PDF Toolbox from
   its https:// address." For `not-ready`: "Open PDF Toolbox once while online and keep it open until
   this says Ready offline."
+- Offline, `sw.js` can't be fetched, so the expected list is unknown; when the state is `ready`, `/offline`
+  lists the files in the precache instead (all present by definition).
 - The status polls once a second while `downloading` or `not-ready`, and otherwise re-reads on
   `controllerchange`, `online` and `offline`.
 

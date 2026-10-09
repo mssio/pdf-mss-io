@@ -28,6 +28,7 @@ test("after the first visit the app works with the server gone", async ({ page }
       return false;
     });
     await page.reload(); // the active worker now controls the page
+    await expect(page.locator("footer").getByRole("link", { name: "Ready offline" })).toBeVisible();
   } finally {
     await stopPreview(server, port);
   }
@@ -37,4 +38,7 @@ test("after the first visit the app works with the server gone", async ({ page }
   await page.goto(`${origin}/decrypt`);
   await expect(page.getByRole("heading", { name: "Decrypt PDF" })).toBeVisible();
   expect(await decryptProtected(page)).toBe("protected-d.pdf");
+  await page.goto(`${origin}/offline`);
+  await expect(page.getByRole("heading", { name: "Ready offline" })).toBeVisible();
+  await expect(page.getByText("PDF engine: downloaded")).toBeVisible();
 });

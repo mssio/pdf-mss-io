@@ -42,6 +42,10 @@ src/lib/update-check.ts   when to check for a new deployment; whether to show th
 src/lib/job-activity.ts   is any job running (the update prompt never reloads mid-job)
 src/lib/use-app-update.ts registers the service worker; update prompt state
 src/components/UpdatePrompt.tsx  "Update available" dialog + footer button
+src/lib/offline-status.ts pure: offline state from the SW lifecycle + precache contents (parses sw.js's list)
+src/lib/use-offline-status.ts  reads the registration and caches; polls while downloading
+src/components/OfflineStatusLink.tsx  footer "Ready offline" / "Downloading…" link → /offline
+src/pages/OfflinePage.tsx /offline: download progress, file list
 src/lib/use-blob-url.ts   owns the download blob URL and revokes it
 src/lib/crash-guard.ts    sessionStorage note while a job runs; src/components/CrashNotice.tsx explains a mid-job reload
 src/components/JobStatus.tsx  step + elapsed time (and a progress bar while qpdf writes) under the submit button
@@ -111,6 +115,10 @@ docs/notes/<ver>-plan.md  plans for future versions; their owner checks move int
   (`src/lib/job-activity.ts`). Closing every tab and reopening still picks up a new version.
 - Hosting: `sw.js` and `index.html` must not be long-cached by a CDN (`Cache-Control: no-cache` or a short edge
   cache), or the update check sees a stale version. Hashed `assets/` files can be cached forever.
+- `clientsClaim: true`: the first install controls the open page as soon as it finishes. The footer shows the
+  offline state (`src/lib/offline-status.ts`); `/offline` shows the download. The state parses the precache list
+  from `sw.js` (`{url:"…",revision:…}`); if the plugin changes that format, `offline-status.test.ts` and
+  `e2e/update.spec.ts` must be updated.
 - Workbox precaches `**/*.{js,css,html,svg,png,ico,wasm,webmanifest}` with
   `maximumFileSizeToCacheInBytes: 3_000_000`. qpdf's wasm is ~2.2 MB; if an asset grows past 3 MB the
   build fails. Raise the limit deliberately, never drop the wasm from the precache.
