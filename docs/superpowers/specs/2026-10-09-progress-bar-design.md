@@ -504,12 +504,13 @@ The offline app only works reliably once it is on the home screen and has finish
 
   Step 1 also says: "On older iPhones the Share button is at the bottom of the screen." The pages work
   on any device (they are just instructions).
-- **Screenshots** (`public/install/*.webp`): the owner's iPhone (iOS 26 Safari), full screen, 600 px
-  wide (~600 × 1300), ~50–80 KB each, metadata stripped. Personal details removed without cropping:
-  - status bar replaced by a clean one (time 9:41, full signal and battery, no camera/VPN indicators);
+- **Screenshots** (`public/install/*.webp`): the owner's iPhone (iOS 26 Safari), full screen, 600 × 1304,
+  10–32 KB each (~120 KB in total), metadata stripped. Personal details removed without cropping:
+  - status bar cleaned: time 9:41, full battery, no camera indicator in the island (signal and Wi-Fi
+    icons kept as they were);
   - the test address replaced with `pdf.mss.io` / `https://pdf.mss.io/`;
-  - share sheet: the contacts row and the app row blurred (owner's choice: blur, so it still looks
-    real); bookmark folder names replaced with a generic name;
+  - menu and share sheet: the contacts row, the app row, app actions, the bookmark folder name and the
+    1Password row blurred (owner's choice: blur, so it still looks real);
   - home screen: dock, badges and every other app blurred; only the PDF Toolbox icon stays sharp.
 - **Precache:** `webp` is added to Workbox `globPatterns`, so the steps work offline.
 
