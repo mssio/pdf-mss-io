@@ -42,8 +42,8 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 
 ## Owner checks for 1.1.0
 
-- [ ] Real iPhone: Compress and Encrypt a ~200 MB PDF. The bar moves, "Finishing…" shows, the download opens, and no "took too long" message appears.
-- [ ] Desktop browser: the same with a large PDF. The bar moves smoothly and the result is correct.
+- [x] Real iPhone: Compress and Encrypt a ~200 MB PDF. The bar moves, "Finishing…" shows, the download opens, and no "took too long" message appears.
+- [x] Desktop browser: the same with a large PDF. The bar moves smoothly and the result is correct.
 - [ ] Installed PWA: after closing every tab and reopening online, the footer shows 1.1.0, and the app still works offline.
 
 ## Next versions
