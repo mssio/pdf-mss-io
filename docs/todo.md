@@ -40,6 +40,6 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 
 ## Next versions
 
-Plans live in `docs/notes/`: [1.1.0](notes/1.1.0-plan.md) (real progress bar) and
-[1.2.0](notes/1.2.0-plan.md) (page grid, Organize, images in Merge). When a release starts, copy its
-owner checks here as unticked boxes; this file stays the release gate.
+1.1.0 (real progress bar) has a spec: [2026-10-09-progress-bar-design.md](superpowers/specs/2026-10-09-progress-bar-design.md).
+Later versions are planned in `docs/notes/`: [1.2.0](notes/1.2.0-plan.md) (page grid, Organize, images in
+Merge). When a release starts, copy its owner checks here as unticked boxes; this file stays the release gate.
