@@ -42,6 +42,7 @@ src/lib/use-blob-url.ts   owns the download blob URL and revokes it
 src/lib/crash-guard.ts    sessionStorage note while a job runs; src/components/CrashNotice.tsx explains a mid-job reload
 src/components/JobStatus.tsx  step + elapsed time (and a progress bar while qpdf writes) under the submit button
 src/app-version.d.ts      __APP_VERSION__ (package.json version, injected by vite.config.ts; shown in the footer)
+                          and __APP_BUILD_LABEL__ (test builds only; src/lib/build-label.ts)
 src/lib/*.ts              pure helpers (filename, format, limits, pdf-files, page-ranges,
                           passwords, merge-list, pdf-info), each with a *.test.ts
 src/test/make-pdf.ts      builds valid PDFs for tests
@@ -144,6 +145,12 @@ npm run test:e2e   # for any UI or behavior change
 ```
 
 Checks only a person can do are the owner boxes in `docs/todo.md`; only the owner ticks them. Never start a release unless `npm run test:e2e` passes and every box is ticked.
+
+## Test builds
+
+Builds served for the owner to try on a device (LAN `vite preview --host`, `tailscale serve`) use
+`npm run build:test`: the footer then reads "Version 1.1.0 · test <commit>[-dirty] <MM-DD HH:mm>", so a
+cached older build is easy to spot. Release builds use plain `npm run build` (no note).
 
 ## Workflow
 
