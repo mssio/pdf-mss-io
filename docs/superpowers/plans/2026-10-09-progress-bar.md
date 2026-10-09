@@ -2018,3 +2018,689 @@ git add e2e/preview-server.ts e2e/update.spec.ts e2e/offline.spec.ts AGENTS.md C
 git commit -m "test: update prompt E2E; docs for the update prompt"
 git push
 ```
+
+---
+
+## Offline readiness status (Tasks 11–12) and large-file reload (Task 13), added 2026-10-09
+
+Spec sections 8 and 9 are the authority. Run Tasks 8–13 in order. Task 12 also changes the footer's exact text, which `e2e/shell.spec.ts` asserts.
+
+**Extra global constraints for Tasks 11–13:**
+- Footer order: `Version 1.1.0` · build label (test builds) · update button (when ready) · offline status link.
+- Footer link texts exactly: `Ready offline`, `Downloading for offline use… 40%` (or without the percent), `Not available offline yet`, `Offline use not available`.
+- `/offline` help texts exactly as in spec section 8, plus for `ready`: `PDF Toolbox works without a connection on this device.`
+- `RELEASE_ENGINE_AFTER_BYTES = 50 * 1024 * 1024`; crash-guard hold after building a download: 2000 ms.
+
+**Review focus (Tasks 11–13):**
+1. With service workers blocked or unsupported (plain HTTP), the footer must still render and never throw. It shows "Not available offline yet" or "Offline use not available". Pinned by `offlineState` unit tests and every E2E spec.
+2. A stale job finishing must not `resetQpdf()` under a newer job. Only the current job releases the engine. Covered by the condition `isCurrent() && shouldReleaseEngine(sizeBytes)` and E2E "Compress twice".
+3. An update downloading in the background must not flip a ready app to "Downloading". Pinned by the `offlineState` unit test "an active worker with an update installing is still ready".
+4. The crash note must be cleared even if building the Blob throws. Pinned by a unit test.
+
+---
+
+### Task 11: `clientsClaim` and the pure offline-status module
+
+**Files:**
+- Modify: `vite.config.ts` (Workbox options)
+- Create: `src/lib/offline-status.ts`, `src/lib/offline-status.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `type OfflineState = { kind: "ready" } | { kind: "downloading"; done: number; total: number | null } | { kind: "not-ready" } | { kind: "unsupported" }`
+  - `parsePrecacheList(source: string): string[] | null`
+  - `cachedPath(url: string): string`
+  - `offlineState(input: { supported: boolean; controlled: boolean; installing: boolean; active: boolean; expected: string[] | null; cached: string[] }): OfflineState`
+  - `offlinePercent(state: OfflineState): number | null`
+  - `offlineLabel(state: OfflineState): string`
+  - `isEngineFile(path: string): boolean`
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `src/lib/offline-status.test.ts`:
+
+```ts
+import { describe, expect, test } from "vitest";
+
+import {
+  cachedPath,
+  isEngineFile,
+  offlineLabel,
+  offlinePercent,
+  offlineState,
+  parsePrecacheList,
+} from "@/lib/offline-status";
+
+describe("parsePrecacheList", () => {
+  test("reads the generated (minified) precache list", () => {
+    const source =
+      'e.precacheAndRoute([{url:"assets/index-abc.js",revision:null},{url:"index.html",revision:"80b2"},{url:"assets/qpdf-x.wasm",revision:null}],{})';
+    expect(parsePrecacheList(source)).toEqual(["assets/index-abc.js", "index.html", "assets/qpdf-x.wasm"]);
+  });
+
+  test("also reads quoted keys", () => {
+    expect(parsePrecacheList('[{"url":"index.html","revision":"1"}]')).toEqual(["index.html"]);
+  });
+
+  test("no list → null", () => {
+    expect(parsePrecacheList("self.addEventListener('fetch', () => {})")).toBeNull();
+  });
+});
+
+test("cachedPath strips the origin and Workbox's revision parameter", () => {
+  expect(cachedPath("https://pdf.example/index.html?__WB_REVISION__=80b2")).toBe("index.html");
+  expect(cachedPath("https://pdf.example/assets/index-abc.js")).toBe("assets/index-abc.js");
+});
+
+test("isEngineFile finds the qpdf wasm", () => {
+  expect(isEngineFile("assets/qpdf-DoMQ-ZAf.wasm")).toBe(true);
+  expect(isEngineFile("assets/index-abc.js")).toBe(false);
+});
+
+describe("offlineState", () => {
+  const expected = ["index.html", "assets/a.js", "assets/qpdf-x.wasm"];
+  const base = { supported: true, controlled: false, installing: false, active: false, expected, cached: [] as string[] };
+
+  test("no service worker here → unsupported", () => {
+    expect(offlineState({ ...base, supported: false })).toEqual({ kind: "unsupported" });
+  });
+
+  test("nothing installed → not ready", () => {
+    expect(offlineState(base)).toEqual({ kind: "not-ready" });
+  });
+
+  test("first install running → downloading, counted against the list", () => {
+    expect(offlineState({ ...base, installing: true, cached: ["index.html", "assets/a.js"] })).toEqual({
+      kind: "downloading",
+      done: 2,
+      total: 3,
+    });
+  });
+
+  test("first install running without a list → downloading with unknown total", () => {
+    expect(offlineState({ ...base, installing: true, expected: null, cached: ["index.html"] })).toEqual({
+      kind: "downloading",
+      done: 1,
+      total: null,
+    });
+  });
+
+  test("active and in control → ready", () => {
+    expect(offlineState({ ...base, active: true, controlled: true })).toEqual({ kind: "ready" });
+  });
+
+  test("active, not yet in control, but every file cached → ready", () => {
+    expect(offlineState({ ...base, active: true, cached: expected })).toEqual({ kind: "ready" });
+  });
+
+  test("active, not in control, files missing → still downloading", () => {
+    expect(offlineState({ ...base, active: true, cached: ["index.html"] })).toEqual({
+      kind: "downloading",
+      done: 1,
+      total: 3,
+    });
+  });
+
+  test("an active worker with an update installing is still ready", () => {
+    expect(offlineState({ ...base, active: true, controlled: true, installing: true })).toEqual({ kind: "ready" });
+  });
+});
+
+describe("offlineLabel and offlinePercent", () => {
+  test("labels", () => {
+    expect(offlineLabel({ kind: "ready" })).toBe("Ready offline");
+    expect(offlineLabel({ kind: "downloading", done: 12, total: 30 })).toBe("Downloading for offline use… 40%");
+    expect(offlineLabel({ kind: "downloading", done: 12, total: null })).toBe("Downloading for offline use…");
+    expect(offlineLabel({ kind: "not-ready" })).toBe("Not available offline yet");
+    expect(offlineLabel({ kind: "unsupported" })).toBe("Offline use not available");
+  });
+
+  test("a download never shows 100% until it is ready", () => {
+    expect(offlinePercent({ kind: "downloading", done: 30, total: 30 })).toBe(99);
+    expect(offlinePercent({ kind: "downloading", done: 0, total: 30 })).toBe(0);
+    expect(offlinePercent({ kind: "ready" })).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `npx vitest run src/lib/offline-status.test.ts`
+Expected: FAIL with "Failed to resolve import".
+
+- [ ] **Step 3: Implement**
+
+Create `src/lib/offline-status.ts`:
+
+```ts
+/** Whether this device can use PDF Toolbox offline (spec section 8). */
+export type OfflineState =
+  | { kind: "ready" }
+  | { kind: "downloading"; done: number; total: number | null }
+  | { kind: "not-ready" }
+  | { kind: "unsupported" };
+
+const ENTRY = /\{\s*"?url"?\s*:\s*"([^"]+)"\s*,\s*"?revision"?\s*:\s*(?:"[^"]*"|null)\s*\}/g;
+
+/** The files the build precaches, from the generated sw.js; null if the list can't be found. */
+export function parsePrecacheList(source: string): string[] | null {
+  const paths = [...source.matchAll(ENTRY)].map((match) => match[1]);
+  return paths.length > 0 ? paths : null;
+}
+
+/** A precache cache key ("https://host/index.html?__WB_REVISION__=…") as a precache-list path. */
+export function cachedPath(url: string): string {
+  return new URL(url).pathname.replace(/^\//, "");
+}
+
+export function isEngineFile(path: string): boolean {
+  return /qpdf-[^/]*\.wasm$/.test(path);
+}
+
+export function offlineState({
+  supported,
+  controlled,
+  installing,
+  active,
+  expected,
+  cached,
+}: {
+  supported: boolean;
+  controlled: boolean;
+  installing: boolean;
+  active: boolean;
+  expected: string[] | null;
+  cached: string[];
+}): OfflineState {
+  if (!supported) return { kind: "unsupported" };
+  const have = new Set(cached);
+  const done = expected ? expected.filter((path) => have.has(path)).length : have.size;
+  const complete = expected !== null && done === expected.length;
+  if (active && (controlled || complete)) return { kind: "ready" };
+  if (installing || active) return { kind: "downloading", done, total: expected?.length ?? null };
+  return { kind: "not-ready" };
+}
+
+/** Download percent, capped at 99 until the worker is active and the state is ready. */
+export function offlinePercent(state: OfflineState): number | null {
+  if (state.kind !== "downloading" || !state.total) return null;
+  return Math.min(99, Math.floor((state.done / state.total) * 100));
+}
+
+export function offlineLabel(state: OfflineState): string {
+  switch (state.kind) {
+    case "ready":
+      return "Ready offline";
+    case "downloading": {
+      const percent = offlinePercent(state);
+      return percent === null ? "Downloading for offline use…" : `Downloading for offline use… ${percent}%`;
+    }
+    case "not-ready":
+      return "Not available offline yet";
+    case "unsupported":
+      return "Offline use not available";
+  }
+}
+```
+
+- [ ] **Step 4: Run them to verify they pass**
+
+Run: `npx vitest run src/lib/offline-status.test.ts`
+Expected: 15 PASS.
+
+- [ ] **Step 5: `clientsClaim`**
+
+In `vite.config.ts`, inside `workbox: { … }`, after `navigateFallback: '/index.html',` add:
+
+```ts
+        // The first install takes over the open page as soon as it finishes, so the first visit works
+        // offline without a relaunch. Updates still wait for "Update now" (registerType 'prompt').
+        clientsClaim: true,
+```
+
+Run: `npm run build && grep -c "clientsClaim" dist/sw.js`
+Expected: `1` or more.
+
+- [ ] **Step 6: Full check, commit, push**
+
+```bash
+npm run lint && npm test && npm run build
+git add vite.config.ts src/lib/offline-status.ts src/lib/offline-status.test.ts
+git commit -m "feat: offline-status logic; first install takes control (clientsClaim)"
+git push
+```
+
+---
+
+### Task 12: Footer status link, `/offline` page, E2E, docs
+
+**Files:**
+- Create: `src/lib/use-offline-status.ts`, `src/components/OfflineStatusLink.tsx`, `src/pages/OfflinePage.tsx`
+- Modify: `src/router.ts`, `src/components/AppShell.tsx`, `e2e/shell.spec.ts`, `e2e/offline.spec.ts`, `AGENTS.md`, `CHANGELOG.md`, `docs/todo.md`
+
+**Interfaces:**
+- Consumes: Task 11's exports.
+- Produces: `useOfflineStatus(): OfflineSnapshot | null` with `type OfflineSnapshot = { state: OfflineState; expected: string[] | null; cached: string[] }`; the route `/offline` with an `h1` whose text is `offlineLabel(state)`.
+
+- [ ] **Step 1: Update the E2E expectations first (failing)**
+
+`e2e/shell.spec.ts`: in "header, footer and home grid", change the footer expectation to:
+
+```ts
+  await expect(page.locator("footer")).toHaveText(
+    `PDFs are processed locally in your browser. Nothing is uploaded. · Version ${version} · Not available offline yet`,
+  );
+  await expect(page.locator("footer").getByRole("link", { name: "Not available offline yet" })).toHaveAttribute(
+    "href",
+    "/offline",
+  );
+```
+
+`e2e/offline.spec.ts`, in "after the first visit the app works with the server gone": after `await page.reload(); // the active worker now controls the page`, add:
+
+```ts
+    await expect(page.locator("footer").getByRole("link", { name: "Ready offline" })).toBeVisible();
+```
+
+and after `expect(await decryptProtected(page)).toBe("protected-d.pdf");` add:
+
+```ts
+  await page.goto(`${origin}/offline`);
+  await expect(page.getByRole("heading", { name: "Ready offline" })).toBeVisible();
+  await expect(page.getByText("PDF engine: downloaded")).toBeVisible();
+```
+
+Run: `npm run test:e2e -- e2e/shell.spec.ts e2e/offline.spec.ts`
+Expected: the footer test and the offline test FAIL (no status link yet).
+
+- [ ] **Step 2: The hook**
+
+Create `src/lib/use-offline-status.ts`:
+
+```ts
+import { useEffect, useState } from "react";
+
+import { cachedPath, type OfflineState, offlineState, parsePrecacheList } from "@/lib/offline-status";
+
+export type OfflineSnapshot = { state: OfflineState; expected: string[] | null; cached: string[] };
+
+/** Every path in Workbox's precache caches. */
+async function cachedPaths(): Promise<string[]> {
+  const paths: string[] = [];
+  for (const name of await caches.keys()) {
+    if (!name.startsWith("workbox-precache")) continue;
+    for (const request of await (await caches.open(name)).keys()) paths.push(cachedPath(request.url));
+  }
+  return paths;
+}
+
+async function readSnapshot(known: string[] | null): Promise<OfflineSnapshot> {
+  const supported = window.isSecureContext && "serviceWorker" in navigator && "caches" in window;
+  if (!supported) return { state: { kind: "unsupported" }, expected: known, cached: [] };
+  const registration = await navigator.serviceWorker.getRegistration();
+  const cached = await cachedPaths();
+  let expected = known;
+  if (!expected && navigator.onLine) {
+    const response = await fetch("/sw.js", { cache: "no-store" }).catch(() => null);
+    if (response?.ok) expected = parsePrecacheList(await response.text());
+  }
+  const state = offlineState({
+    supported,
+    controlled: navigator.serviceWorker.controller !== null,
+    installing: Boolean(registration?.installing),
+    active: Boolean(registration?.active),
+    expected,
+    cached,
+  });
+  return { state, expected, cached };
+}
+
+/**
+ * Whether this device can use the app offline (spec section 8). Re-reads once a second while
+ * downloading or not ready, and on controllerchange / online / offline. null until the first read.
+ */
+export function useOfflineStatus(): OfflineSnapshot | null {
+  const [snapshot, setSnapshot] = useState<OfflineSnapshot | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let reading = false;
+    let expected: string[] | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async () => {
+      if (reading) return;
+      reading = true;
+      clearTimeout(timer);
+      try {
+        const next = await readSnapshot(expected).catch(() => null);
+        if (cancelled || !next) return;
+        expected = next.expected;
+        setSnapshot(next);
+        if (next.state.kind === "downloading" || next.state.kind === "not-ready") timer = setTimeout(refresh, 1000);
+      } finally {
+        reading = false;
+      }
+    };
+    const onChange = () => void refresh();
+    void refresh();
+    navigator.serviceWorker?.addEventListener("controllerchange", onChange);
+    window.addEventListener("online", onChange);
+    window.addEventListener("offline", onChange);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      navigator.serviceWorker?.removeEventListener("controllerchange", onChange);
+      window.removeEventListener("online", onChange);
+      window.removeEventListener("offline", onChange);
+    };
+  }, []);
+
+  return snapshot;
+}
+```
+
+- [ ] **Step 3: Footer link and page**
+
+Create `src/components/OfflineStatusLink.tsx`:
+
+```tsx
+import { Link } from "react-router";
+
+import { offlineLabel } from "@/lib/offline-status";
+import { useOfflineStatus } from "@/lib/use-offline-status";
+
+/** Footer entry: whether the app works offline here; opens /offline for details. */
+export function OfflineStatusLink() {
+  const snapshot = useOfflineStatus();
+  if (!snapshot) return null;
+  return (
+    <>
+      {" · "}
+      <Link to="/offline" className="underline-offset-4 hover:underline">
+        {offlineLabel(snapshot.state)}
+      </Link>
+    </>
+  );
+}
+```
+
+Create `src/pages/OfflinePage.tsx`:
+
+```tsx
+import { Check, Clock } from "lucide-react";
+import { Link } from "react-router";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { isEngineFile, offlineLabel, offlinePercent, type OfflineState } from "@/lib/offline-status";
+import { useOfflineStatus } from "@/lib/use-offline-status";
+
+const HELP: Record<OfflineState["kind"], string> = {
+  ready: "PDF Toolbox works without a connection on this device.",
+  downloading: "Keep PDF Toolbox open until this says Ready offline. After that it works without a connection.",
+  "not-ready": "Open PDF Toolbox once while online and keep it open until this says Ready offline.",
+  unsupported: "This address can't keep files for offline use. Open PDF Toolbox from its https:// address.",
+};
+
+/** /offline: whether this device can use the app offline, and the download's progress. */
+export function Component() {
+  const snapshot = useOfflineStatus();
+  if (!snapshot) return null;
+  const { state, expected, cached } = snapshot;
+  const have = new Set(cached);
+  const engine = expected?.find(isEngineFile);
+  const percent = offlinePercent(state);
+
+  return (
+    <div className="mx-auto max-w-lg px-4 py-10 sm:px-6 sm:py-14">
+      <Card>
+        <CardHeader>
+          <h1 className="text-lg font-semibold">{offlineLabel(state)}</h1>
+          <CardDescription>{HELP[state.kind]}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          {state.kind === "downloading" && percent !== null ? (
+            <Progress value={percent} aria-label="Downloading for offline use" />
+          ) : null}
+          {engine && state.kind !== "unsupported" ? (
+            <p className="text-sm">PDF engine: {have.has(engine) ? "downloaded" : "waiting"}</p>
+          ) : null}
+          {expected && state.kind !== "unsupported" ? (
+            <ul className="grid gap-1 text-xs text-muted-foreground">
+              {expected.map((path) => (
+                <li key={path} className="flex items-center gap-2 break-all">
+                  {have.has(path) ? <Check className="size-3.5 shrink-0" /> : <Clock className="size-3.5 shrink-0" />}
+                  {path}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <Button className="w-full sm:w-auto" asChild>
+            <Link to="/">Back to home</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+In `src/router.ts`, add the route before the catch-all:
+
+```ts
+          { path: "/offline", lazy: () => import("@/pages/OfflinePage") },
+          { path: "*", Component: NotFoundPage },
+```
+
+In `src/components/AppShell.tsx`, import `OfflineStatusLink` from `@/components/OfflineStatusLink`, and render `<OfflineStatusLink />` as the last child of `<footer>`, after the update button from Task 9.
+
+- [ ] **Step 4: Run the E2E specs**
+
+Stop any server on port 4173 first.
+
+Run: `npm run test:e2e -- e2e/shell.spec.ts e2e/offline.spec.ts`
+Expected: PASS in Chromium (both) and WebKit (offline).
+
+- [ ] **Step 5: Docs**
+
+1. `AGENTS.md`, Map: add
+
+```
+src/lib/offline-status.ts pure: offline state from the SW lifecycle + precache contents (parses sw.js's list)
+src/lib/use-offline-status.ts  reads the registration and caches; polls while downloading
+src/components/OfflineStatusLink.tsx  footer "Ready offline" / "Downloading…" link → /offline
+src/pages/OfflinePage.tsx /offline: download progress, file list
+```
+
+   and in "PWA notes" add: `- \`clientsClaim: true\`: the first install controls the open page as soon as it finishes. The footer shows the offline state (\`src/lib/offline-status.ts\`); \`/offline\` shows the download. The state parses the precache list from \`sw.js\` (\`{url:"…",revision:…}\`); if the plugin changes that format, \`offline-status.test.ts\` and \`e2e/update.spec.ts\` must be updated.`
+
+2. `CHANGELOG.md`, 1.1.0 → Added: `- The footer shows whether the app is ready to use offline; while it is still downloading, "/offline" shows the progress. The first visit works offline as soon as the download finishes.`
+
+3. `docs/todo.md`: automated row `| Footer shows "Ready offline" once installed and "/offline" shows it while offline; with no service worker it says "Not available offline yet" | \`e2e/offline.spec.ts\`, \`e2e/shell.spec.ts\` |`, and owner box `- [ ] Fresh install on the iPhone (site data cleared): the footer goes "Downloading for offline use… n%" → "Ready offline"; then offline, every tool opens and Decrypt works.`
+
+- [ ] **Step 6: Full check, commit, push**
+
+```bash
+npm run lint && npm test && npm run build && npm run test:e2e
+git add src/lib/use-offline-status.ts src/components/OfflineStatusLink.tsx src/pages/OfflinePage.tsx src/router.ts src/components/AppShell.tsx e2e/shell.spec.ts e2e/offline.spec.ts AGENTS.md CHANGELOG.md docs/todo.md
+git commit -m "feat: footer offline status and /offline download page"
+git push
+```
+
+---
+
+### Task 13: Large-file reload: crash notice covers the download, engine memory released
+
+**Files:**
+- Modify: `src/lib/crash-guard.ts`, `src/lib/crash-guard.test.ts`
+- Modify: `src/lib/use-blob-url.ts`
+- Modify: `src/lib/qpdf.ts` (next to `STALL_TIMEOUT_MS`), `src/lib/qpdf.test.ts` (create if missing)
+- Modify: `src/lib/use-qpdf-job.ts`
+- Modify: `e2e/global-setup.ts`, `e2e/job-safeguard.spec.ts`, `CHANGELOG.md`, `docs/todo.md`
+
+**Interfaces:**
+- Produces:
+  - `guardDownload<T>(build: () => T, options?: { storage?: Storage; holdMs?: number }): T` in crash-guard
+  - `RELEASE_ENGINE_AFTER_BYTES`, `shouldReleaseEngine(sizeBytes: number): boolean` in qpdf.ts
+  - fixture `sixty-mb-real.pdf` (1200 pages, ~60 MB, valid)
+
+- [ ] **Step 1: Write the failing unit tests**
+
+Append to `src/lib/crash-guard.test.ts` (it already has `memoryStorage()`). Add `vi` and `afterEach`/`beforeEach` to the vitest import, and `guardDownload` to the crash-guard import:
+
+```ts
+describe("guardDownload", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  test("arms the crash note while the download is built and for 2 s after", () => {
+    const storage = memoryStorage();
+    let armedDuringBuild = false;
+    const url = guardDownload(
+      () => {
+        armedDuringBuild = hadCrashedJob(storage);
+        return "blob:x";
+      },
+      { storage },
+    );
+    expect(url).toBe("blob:x");
+    expect(armedDuringBuild).toBe(true);
+    expect(hadCrashedJob(storage)).toBe(true);
+    vi.advanceTimersByTime(1999);
+    expect(hadCrashedJob(storage)).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(hadCrashedJob(storage)).toBe(false);
+  });
+
+  test("a build that throws still clears the note", () => {
+    const storage = memoryStorage();
+    expect(() =>
+      guardDownload(
+        () => {
+          throw new RangeError("out of memory");
+        },
+        { storage },
+      ),
+    ).toThrow(RangeError);
+    vi.advanceTimersByTime(2000);
+    expect(hadCrashedJob(storage)).toBe(false);
+  });
+});
+```
+
+If `src/lib/qpdf.test.ts` exists, append to it; otherwise create it with `import { describe, expect, test } from "vitest";`. Then add:
+
+```ts
+import { RELEASE_ENGINE_AFTER_BYTES, shouldReleaseEngine } from "@/lib/qpdf";
+
+describe("shouldReleaseEngine", () => {
+  test("only after jobs over 50 MB", () => {
+    expect(RELEASE_ENGINE_AFTER_BYTES).toBe(50 * 1024 * 1024);
+    expect(shouldReleaseEngine(RELEASE_ENGINE_AFTER_BYTES)).toBe(false);
+    expect(shouldReleaseEngine(RELEASE_ENGINE_AFTER_BYTES + 1)).toBe(true);
+    expect(shouldReleaseEngine(1024)).toBe(false);
+  });
+});
+```
+
+Run: `npx vitest run src/lib/crash-guard.test.ts src/lib/qpdf.test.ts`
+Expected: FAIL (`guardDownload` / `shouldReleaseEngine` not exported).
+
+- [ ] **Step 2: Implement**
+
+Append to `src/lib/crash-guard.ts`:
+
+```ts
+/**
+ * Building a download copies the whole output once more, which is when a phone is most likely to run
+ * out of memory, after the job itself has finished. Keeps the crash note for `holdMs` after `build`
+ * returns (or throws), so a reload in that window is explained too.
+ */
+export function guardDownload<T>(
+  build: () => T,
+  { storage = defaultStorage(), holdMs = 2000 }: { storage?: Storage; holdMs?: number } = {},
+): T {
+  markJobStarted(storage);
+  try {
+    return build();
+  } finally {
+    setTimeout(() => markJobFinished(storage), holdMs);
+  }
+}
+```
+
+In `src/lib/use-blob-url.ts`, add `import { guardDownload } from "@/lib/crash-guard";` and change `show` to:
+
+```ts
+  const show = useCallback((bytes: Uint8Array<ArrayBuffer>, filename: string) => {
+    const url = guardDownload(() => URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })));
+    setDownload({ url, filename });
+  }, []);
+```
+
+In `src/lib/qpdf.ts`, below `STALL_TIMEOUT_MS`:
+
+```ts
+/**
+ * After a job over this size, the engine's worker is replaced (resetQpdf) before the page builds the
+ * download, so the finished job's memory is freed at once instead of whenever the browser collects it.
+ */
+export const RELEASE_ENGINE_AFTER_BYTES = 50 * 1024 * 1024;
+
+export function shouldReleaseEngine(sizeBytes: number): boolean {
+  return sizeBytes > RELEASE_ENGINE_AFTER_BYTES;
+}
+```
+
+In `src/lib/use-qpdf-job.ts`, add `shouldReleaseEngine` to the `@/lib/qpdf` import, and directly after the `runWithTimeLimits({ … })` call resolves (before `if (!isCurrent()) return null;`) add:
+
+```ts
+        // Free the finished job's memory before the page copies the output into a download.
+        // Only the shown job does this: a stale one must not reset the engine under a newer job.
+        if (isCurrent() && shouldReleaseEngine(sizeBytes)) resetQpdf();
+```
+
+Run: `npx vitest run src/lib/crash-guard.test.ts src/lib/qpdf.test.ts`
+Expected: PASS.
+
+- [ ] **Step 3: E2E: a second large job still works**
+
+In `e2e/global-setup.ts`, after the `twenty-mb.pdf` line:
+
+```ts
+    // Real and ~60 MB: above RELEASE_ENGINE_AFTER_BYTES, so the engine is replaced after each job.
+    await writeFile(fixture("sixty-mb-real.pdf"), makePdf(1200, { fillerBytes: 50_000 }));
+```
+
+Append to `e2e/job-safeguard.spec.ts`:
+
+```ts
+test("after a job over 50 MB the engine is replaced, and the next job works", async ({ page }) => {
+  await page.goto("/compress");
+  for (let run = 0; run < 2; run++) {
+    await chooseFiles(page, "sixty-mb-real.pdf");
+    await page.getByRole("button", { name: "Compress", exact: true }).click();
+    await expect(page.getByText("Your PDF is smaller")).toBeVisible({ timeout: 60_000 });
+    await page.getByRole("button", { name: "Compress another file" }).click();
+  }
+});
+```
+
+Run: `npm run test:e2e -- e2e/job-safeguard.spec.ts`
+Expected: PASS.
+
+- [ ] **Step 4: Docs and the owner re-test**
+
+`CHANGELOG.md`, 1.1.0 → Changed: `- Big files on phones: the engine's memory is freed before the download is built, and a reload while building it now shows the "page reloaded" notice.`
+
+`docs/todo.md`, owner box: `- [ ] iPhone, 245 MB PDF, offline and online: Encrypt, Compress and Decrypt each finish with a download. If any reloads (now with the "page reloaded" notice), note the largest size that worked; PHONE_MAX_BYTES is lowered to it before release.`
+
+- [ ] **Step 5: Full check, commit, push**
+
+```bash
+npm run lint && npm test && npm run build && npm run test:e2e
+git add src/lib/crash-guard.ts src/lib/crash-guard.test.ts src/lib/use-blob-url.ts src/lib/qpdf.ts src/lib/qpdf.test.ts src/lib/use-qpdf-job.ts e2e/global-setup.ts e2e/job-safeguard.spec.ts CHANGELOG.md docs/todo.md
+git commit -m "fix: free engine memory before building big downloads; crash notice covers the download step"
+git push
+```

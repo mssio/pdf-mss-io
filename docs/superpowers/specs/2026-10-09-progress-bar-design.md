@@ -2,7 +2,8 @@
 
 Date: 2026-10-09
 Status: approved; revised 2026-10-09 after an iPhone test (smooth bar motion, section 4) and to add the
-update prompt (section 7, draft for owner review)
+update prompt (section 7), offline readiness status (section 8) and the large-file reload fix
+(section 9); sections 7–9 are drafts for owner review
 
 ## Goal
 
@@ -30,6 +31,8 @@ This spec replaces `docs/notes/1.1.0-plan.md`, deleted in the commit that adds t
 | UI primitive | shadcn new-york v4 `Progress`, adapted to `@radix-ui/react-progress`. |
 | Bar motion | The fill glides to each new value (~600 ms, ease-out) and slides in from 0 when the bar appears, because qpdf's percent comes in bursts (section 1). No motion with "Reduce Motion" on. The `%` text always shows qpdf's real value. |
 | Update prompt | In 1.1.0 (owner, 2026-10-09). Checks hourly, when the app returns to the foreground and when the device comes back online; dialog "Update available" with Later / Update now; after Later, an "Update to the latest version" button in the footer. Never reloads during a job. Static hosting only. |
+| Offline status | In 1.1.0 (owner, 2026-10-09): footer shows whether the app is ready offline or still downloading; clicking opens `/offline` with the download progress. The first visit is put under the service worker's control as soon as the download finishes (`clientsClaim`). |
+| Large-file reload | In 1.1.0 (owner, 2026-10-09): a 245 MB encrypt on the iPhone reloaded the page after 100% with no message. Keep the crash notice armed while the download is built, free the engine's memory before building it, then re-test; lower `PHONE_MAX_BYTES` only if it still fails. |
 | App version | `1.1.0`. |
 
 ## 1. What the package gives us
@@ -312,11 +315,120 @@ Everything is bundled into the precache; the only new runtime request is the `sw
   the iPhone, serve a newer test build; the dialog appears, Later shows the footer button, and
   updating shows the new build code in the footer.
 
+## 8. Offline readiness status
+
+### What happened
+
+On the owner's iPhone the installed app opened offline, but a tool page failed with the error screen.
+The service worker installs all-or-nothing: until every precached file (≈30 files, 2.2 MB of them the
+PDF engine) is downloaded, it doesn't take over, and nothing is available offline. The home page can
+still appear from the browser's ordinary cache, so the app *looks* installed while tool pages and the
+engine (separate, on-demand files) can't load. Nothing tells the user. Also, without `clientsClaim`
+the first visit never comes under the worker's control, even after the download finishes; only the
+next launch does.
+
+### Behavior
+
+- **`clientsClaim: true`** in the Workbox options: the first install takes control of the open page as
+  soon as it finishes. With `registerType: 'prompt'` this only affects the first install. Updates still
+  wait for "Update now" (section 7), which reloads anyway.
+- The footer shows the offline state after the version (and after the update button, if any), as a
+  link to `/offline`:
+
+| State | When | Footer link text |
+|---|---|---|
+| `ready` | a worker is active and controls the page, or is active and every listed file is cached | `Ready offline` |
+| `downloading` | the first install is running (`installing`, no active worker), or active but not yet in control | `Downloading for offline use… 40%` (no percent if the file list is unknown) |
+| `not-ready` | service workers work here but nothing is installed (e.g. the first visit was interrupted) | `Not available offline yet` |
+| `unsupported` | no service worker (plain HTTP such as a LAN test address, some private modes) | `Offline use not available` |
+
+- An update downloading in the background doesn't change `ready` (the current version stays complete);
+  section 7 handles updates.
+- **`/offline` page** (lazy route like the tools, not on the home grid): a heading with the state, the
+  same `Progress` bar while downloading (`done / total` files), the PDF engine called out separately
+  ("PDF engine: downloaded" or "PDF engine: waiting"), and a plain list of the files with a check mark once
+  cached. Copy: "Keep PDF Toolbox open until this says Ready offline. After that it works without a
+  connection." For `unsupported`: "This address can't keep files for offline use. Open PDF Toolbox from
+  its https:// address." For `not-ready`: "Open PDF Toolbox once while online and keep it open until
+  this says Ready offline."
+- The status polls once a second while `downloading` or `not-ready`, and otherwise re-reads on
+  `controllerchange`, `online` and `offline`.
+
+### How it's measured (static hosting only)
+
+- Files expected: parsed from `sw.js` (`{url:"…",revision:…}` entries, the generated precache list),
+  fetched with `cache: "no-store"` while online. The first install only happens online, so the list is
+  always available when there is something to measure. If parsing fails, the bar is indeterminate.
+- Files present: the keys of the `workbox-precache…` caches (Workbox writes each file straight into
+  its precache cache during install), normalized to paths without `?__WB_REVISION__=`.
+- No new runtime requests besides that `sw.js` fetch (the same file the update check uses).
+
+### Units
+
+| File | Responsibility |
+|---|---|
+| `src/lib/offline-status.ts` | Pure: `parsePrecacheList(source)`, `cachedPath(url)`, `offlineState({ supported, controlled, installing, active, expected, cached })`, `offlineLabel(state)`. Unit-tested. |
+| `src/lib/use-offline-status.ts` | Reads the registration and caches, fetches and parses `sw.js`, polls while downloading. |
+| `src/components/OfflineStatusLink.tsx` | The footer link. |
+| `src/pages/OfflinePage.tsx` | `/offline`. |
+
+### Tests
+
+- Unit: `parsePrecacheList` (real minified shape, quoted keys, no entries → null), `cachedPath`,
+  `offlineState` for every row of the table, `offlineLabel`.
+- E2E: `offline.spec.ts` asserts the footer reaches "Ready offline" before the server stops, and that
+  `/offline` shows "Ready offline" while offline. Every other spec (service workers blocked) sees "Not
+  available offline yet"; `shell.spec.ts`'s exact footer text is updated.
+
+## 9. Large-file reload on the iPhone
+
+### What happened
+
+Offline on the owner's iPhone, encrypting a 245 MB PDF: the bar ran quickly to 100%, then the page
+reloaded with no message. (The bar is fast because qpdf counts objects and the file has few, large
+ones; see section 1. That part is expected.)
+
+### Cause (likely, to be confirmed on the device)
+
+Memory at the end of a job is at its peak:
+
+- the worker holds the engine instance for `ensureNoOpenPassword`'s `info()` and the one for
+  `encrypt()` (each with its own copy of the 245 MB input) until the browser collects them;
+- the output (≈245 MB) is transferred to the page;
+- `useBlobUrl().show()` then copies it into a `Blob` (another ≈245 MB).
+
+iOS kills the page when it runs out of memory. That happens after `useQpdfJob` has already called
+`markJobFinished()`, so the crash notice ("The page reloaded while a file was being processed…") is
+not shown: the reload looks unexplained.
+
+### Fix
+
+1. **Crash notice covers the download step.** `useBlobUrl().show()` arms the crash guard
+   (`markJobStarted`) before building the `Blob` and disarms it 2 s after the URL is created
+   (`markJobFinished` on a timer), so a kill while building or rendering the download is explained.
+2. **Free the engine's memory before building the download.** After a successful job whose input is
+   over `RELEASE_ENGINE_AFTER_BYTES` (50 MB), `useQpdfJob` calls `resetQpdf()`: the worker is
+   terminated, which frees every engine instance at once instead of waiting for garbage collection.
+   The next job loads a fresh engine (from cache; well under a second on the test devices).
+3. **Re-test on the iPhone** with the same 245 MB PDF, offline and online, for Encrypt, Compress and
+   Decrypt. If it still reloads (now with the notice), the owner picks the largest size that passed,
+   and `PHONE_MAX_BYTES` in `src/lib/limits.ts` is lowered to it. That constant exists for this.
+
+### Tests
+
+- Unit: the crash guard is armed while `show()` builds the Blob and released after 2 s (fake timers,
+  fake storage); `shouldReleaseEngine(sizeBytes)` (at/under/over 50 MB).
+- E2E: after a large job the next job still works (fresh engine): Compress `twenty-mb.pdf` is below the
+  threshold, so the E2E uses a 60 MB real fixture (`sixty-mb-real.pdf`, generated) and runs Compress
+  twice.
+- Owner check: the 245 MB re-test above.
+
 ## Out of scope
 
 - Progress for Info, `ensureNoOpenPassword` or post-steps (qpdf reports none).
 - An overall percentage across several qpdf calls in one job.
 - Cancelling a running job (the package can only `terminate()` the whole instance).
 - Any change to size limits or memory guards.
+- Byte-level download progress (the list has no sizes; files are counted, the engine is shown separately).
 - Showing the new version's number in the update dialog (the service worker doesn't carry it).
 - Updating users still on 1.0.0 through the dialog: their cached app has no prompt, so they reach 1.1.0 the old way (close every tab, reopen), once.
