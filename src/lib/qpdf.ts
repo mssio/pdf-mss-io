@@ -50,6 +50,16 @@ export const ENGINE_LOAD_TIMEOUT_MS = 120_000;
 export const STALL_TIMEOUT_MS = 30_000;
 
 /**
+ * After a job over this size, the engine's worker is replaced (resetQpdf) before the page builds the
+ * download, so the finished job's memory is freed at once instead of whenever the browser collects it.
+ */
+export const RELEASE_ENGINE_AFTER_BYTES = 50 * 1024 * 1024;
+
+export function shouldReleaseEngine(sizeBytes: number): boolean {
+  return sizeBytes > RELEASE_ENGINE_AFTER_BYTES;
+}
+
+/**
  * Generous time allowed for one job once the engine is loaded: 2 minutes plus 2 minutes per started
  * 25 MB of input (245 MB → 22 minutes). Sized well above an iPhone 17's real timings so slower or
  * throttled phones aren't cut off; it only catches a worker that never answers.

@@ -22,6 +22,8 @@ export default async function globalSetup() {
     await writeFile(fixture("linearized.pdf"), (await qpdf.linearize(makePdf(3))).output);
     // Real and ~20 MB: writing it takes long enough for the progress bar to render.
     await writeFile(fixture("twenty-mb.pdf"), makePdf(400, { fillerBytes: 50_000 }));
+    // Real and ~60 MB: above RELEASE_ENGINE_AFTER_BYTES, so the engine is replaced after each job.
+    await writeFile(fixture("sixty-mb-real.pdf"), makePdf(1200, { fillerBytes: 50_000 }));
     await writeFile(fixture("not-a-pdf.pdf"), "This is plain text, not a PDF.\n");
     await writeFile(fixture("empty.pdf"), "");
     await writeFile(fixture("oversize.pdf"), "");

@@ -139,3 +139,13 @@ test("a bar whose first progress arrives in a burst slides in from 0", async ({ 
   expect(values[0]).toBe(0);
   expect(values[1]).toBeGreaterThanOrEqual(35);
 });
+
+test("after a job over 50 MB the engine is replaced, and the next job works", async ({ page }) => {
+  await page.goto("/compress");
+  for (let run = 0; run < 2; run++) {
+    await chooseFiles(page, "sixty-mb-real.pdf");
+    await page.getByRole("button", { name: "Compress", exact: true }).click();
+    await expect(page.getByText("Your PDF is smaller")).toBeVisible({ timeout: 60_000 });
+    await page.getByRole("button", { name: "Compress another file" }).click();
+  }
+});

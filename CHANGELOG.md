@@ -19,6 +19,8 @@ All notable changes to this project are documented here. The format follows
 
 - A stuck PDF engine is detected sooner: once a job reports progress, it stops after 30 seconds
   without any.
+- Big files on phones: the engine's memory is freed before the download is built, and a reload while
+  building it now shows the "page reloaded" notice.
 - `@mssio/qpdf-wasm` 1.1.0 (same qpdf 12.4.2 and the same `qpdf.wasm`; it adds progress reporting).
 
 ## [1.0.0] - 2026-10-07

@@ -13,6 +13,7 @@ import {
   JobTimeoutError,
   jobTimeoutMs,
   resetQpdf,
+  shouldReleaseEngine,
   STALL_TIMEOUT_MS,
 } from "@/lib/qpdf";
 import { EngineLoadTimeoutError, runWithTimeLimits } from "@/lib/run-job";
@@ -73,6 +74,9 @@ export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) 
             if (isCurrent()) setStatus({ phase: "run", label, startedAt, sizeBytes, percent: null });
           },
         });
+        // Free the finished job's memory before the page copies the output into a download.
+        // Only the shown job does this: a stale one must not reset the engine under a newer job.
+        if (isCurrent() && shouldReleaseEngine(sizeBytes)) resetQpdf();
         if (!isCurrent()) return null;
         setLastDurationMs(Date.now() - startedAt);
         return result;

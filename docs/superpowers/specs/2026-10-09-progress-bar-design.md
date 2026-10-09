@@ -411,9 +411,11 @@ not shown: the reload looks unexplained.
 
 ### Fix
 
-1. **Crash notice covers the download step.** `useBlobUrl().show()` arms the crash guard
-   (`markJobStarted`) before building the `Blob` and disarms it 2 s after the URL is created
-   (`markJobFinished` on a timer), so a kill while building or rendering the download is explained.
+1. **Crash notice covers the download step.** For outputs over `RELEASE_ENGINE_AFTER_BYTES`,
+   `useBlobUrl().show()` arms the crash guard (`markJobStarted`) before building the `Blob` and disarms
+   it 2 s after the URL is created (`markJobFinished` on a timer), so a kill while building or rendering
+   the download is explained. Small outputs are not guarded: a deliberate reload (or "Update now") right
+   after a small job would otherwise show a false "page reloaded" notice (caught by `e2e/phone.spec.ts`).
 2. **Free the engine's memory before building the download.** After a successful job whose input is
    over `RELEASE_ENGINE_AFTER_BYTES` (50 MB), `useQpdfJob` calls `resetQpdf()`: the worker is
    terminated, which frees every engine instance at once instead of waiting for garbage collection.
