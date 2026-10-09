@@ -169,7 +169,7 @@ Checks only a person can do are the owner boxes in `docs/todo.md`; only the owne
 ## Test builds
 
 Builds served for the owner to try on a device (LAN `vite preview --host`, `tailscale serve`) use
-`npm run build:test`: the footer then reads "Version 1.1.0 · test <commit>[-dirty] <MM-DD HH:mm>", so a
+`npm run build:test`: the footer then reads "Version 1.1.0 · test <commit>[-dirty] <YYYY-MM-DD HH:mm:ss>", so a
 cached older build is easy to spot. Release builds use plain `npm run build` (no note).
 
 ## Workflow
