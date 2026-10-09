@@ -1,0 +1,1039 @@
+# Progress Bar (1.1.0) Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Ship PDF Toolbox 1.1.0: a percentage bar while qpdf writes a tool's output, "Finishing…" after 100%, and a stuck-engine limit of 30 s without progress while qpdf writes.
+
+**Architecture:** `@mssio/qpdf-wasm` 1.1.0 calls `onProgress(percent)` while qpdf writes. `runWithTimeLimits` gains a resettable deadline that progress calls re-arm. A new pure module `src/lib/job-progress.ts` turns progress into job status and drops calls from stale jobs. `useQpdfJob().run()` hands each job an `onProgress`, and every page passes it to the one qpdf call that writes its download. `JobStatus` renders a shadcn `Progress` bar outside its live region.
+
+**Tech Stack:** Vite 8, React 19, TypeScript ~6.0.3, Vitest 5 (Node env, `src/**/*.test.ts` only), Playwright (Chromium for every spec), shadcn new-york v4 + Radix, `@mssio/qpdf-wasm` 1.1.0 (qpdf 12.4.2).
+
+**Spec:** `docs/superpowers/specs/2026-10-09-progress-bar-design.md`
+
+## Global Constraints
+
+- No backend, no CDN, nothing new loaded at runtime outside the Workbox precache (`AGENTS.md` hard constraints).
+- `@mssio/qpdf-wasm` `^1.1.0`; never import it as a value in app code (type imports only; tests may import it).
+- `STALL_TIMEOUT_MS = 30_000`. `ENGINE_LOAD_TIMEOUT_MS` (120 s) and `jobTimeoutMs()` keep their values.
+- Pass `onProgress` **only** to the qpdf call that writes the download: `decrypt`, `encrypt`, `merge`, `selectPages`, `compress`. Never to `ensureNoOpenPassword`, `info()` or `run()`.
+- Only new user-facing string: `Finishing…` (with the Unicode ellipsis `…`, like every other step).
+- shadcn only; theme tokens only (`bg-primary`, `bg-primary/20`, `text-muted-foreground`); `cn()` for class merging.
+- `MAX_TOTAL_BYTES`, `PHONE_MAX_BYTES`, `assertOutput()` and the 3 MB precache limit stay unchanged (1.1.0's `qpdf.wasm` is byte-identical to 1.0.0's: SHA-256 starts `b7530183edceab14`).
+- App version `1.1.0`. Merging to `main`, tagging and releasing need the owner's go-ahead.
+- Commit each task and push right away. Work on branch `feat/progress-bar`, created from `docs/spec-1.1.0`.
+- Before calling a task done: `npm run lint && npm test && npm run build`; for Tasks 4–5 also `npm run test:e2e`.
+
+## Review Focus
+
+1. **A stale job still holds the shared engine.** After "Compress another file" or leaving the page, the old job keeps running and sending progress. Its time limit must still be re-armed by those calls. If it isn't, it would time out after 30 s and `resetQpdf()` would kill the engine under the user's new job. Pinned in Task 3 (`createOnProgress` re-arms even when not current).
+2. **Slow work after 100%.** Extract runs `info(output)` after `selectPages` reaches 100%. On a big file on a phone that can take over 30 s and must not count as stuck. Pinned in Task 2 ("100 restores the job limit").
+3. **Progress, then silence.** An engine that stops mid-write must fail 30 s after the last percent, not after the 22-minute size limit. Pinned in Task 2.
+4. **Screen readers.** The bar's percentages must not be announced every second. The bar must sit outside `aria-live`, and its value must still be readable (`aria-valuenow`). shadcn's stock `Progress` does **not** forward `value` to Radix's Root, which would drop `aria-valuenow`. Pinned in Task 5 (E2E recorder checks both).
+5. **Progress arriving after the job ended.** A call that lands after `setStatus(null)` must not bring the bar back. Pinned in Task 3 (`withProgress(null, …)` stays `null`).
+
+---
+
+## File map
+
+| File | Change | Responsibility |
+|---|---|---|
+| `package.json`, `package-lock.json` | modify | `@mssio/qpdf-wasm` ^1.1.0, `@radix-ui/react-progress`, version 1.1.0 |
+| `src/lib/qpdf.integration.test.ts` | modify | Node check that `compress` reports progress |
+| `src/lib/qpdf.ts` | modify | `STALL_TIMEOUT_MS` |
+| `src/lib/run-job.ts` / `.test.ts` | modify | resettable deadline, `progress` passed to the job |
+| `src/lib/job-progress.ts` / `.test.ts` | create | `JobStatusState`, `withProgress`, `createOnProgress` |
+| `src/lib/use-qpdf-job.ts` | modify | wires progress into status and limits; job gets `(qpdf, onProgress)` |
+| `src/components/ui/progress.tsx` | create | shadcn new-york v4 `Progress` (Radix) |
+| `src/components/JobStatus.tsx` | modify | bar, percent, "Finishing…" |
+| `src/pages/{Decrypt,Encrypt,Merge,Extract,Compress}Page.tsx` | modify | pass `onProgress` to the writing call |
+| `src/test/make-pdf.ts` | modify | `fillerBytes` option for a slow-to-write fixture |
+| `e2e/global-setup.ts`, `e2e/helpers.ts` | modify | `twenty-mb.pdf` fixture; progress recorder |
+| `e2e/job-safeguard.spec.ts`, `e2e/info.spec.ts` | modify | bar tests; Info shows no bar |
+| `AGENTS.md`, `CHANGELOG.md`, `docs/todo.md` | modify | docs and release gate |
+
+---
+
+### Task 1: Upgrade to `@mssio/qpdf-wasm` 1.1.0
+
+**Files:**
+- Modify: `package.json`, `package-lock.json`
+- Test: `src/lib/qpdf.integration.test.ts`
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: `onProgress?: (percent: number) => void` on `Qpdf` methods (from the package's `ProgressOptions` type).
+
+- [ ] **Step 1: Create the branch**
+
+```bash
+git switch docs/spec-1.1.0 && git pull --ff-only && git switch -c feat/progress-bar
+```
+
+- [ ] **Step 2: Write the failing test**
+
+Append to `src/lib/qpdf.integration.test.ts` (it already imports `makePdf`, `describe`, `expect`, `test`, and has `qpdf` and `pdfFile`):
+
+```ts
+describe("progress", () => {
+  test("compress reports strictly rising write progress that ends at 100", async () => {
+    const seen: number[] = [];
+    await qpdf.compress(pdfFile(makePdf(50)), { onProgress: (percent: number) => seen.push(percent) });
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.at(-1)).toBe(100);
+    expect(seen.every((percent, i) => i === 0 || percent > seen[i - 1])).toBe(true);
+  });
+});
+```
+
+- [ ] **Step 3: Run it to verify it fails**
+
+Run: `npx vitest run src/lib/qpdf.integration.test.ts -t progress`
+Expected: FAIL (`expected 0 to be greater than 1`). 1.0.0 ignores the option.
+
+- [ ] **Step 4: Upgrade**
+
+```bash
+npm install @mssio/qpdf-wasm@^1.1.0
+```
+
+Check `package.json` reads `"@mssio/qpdf-wasm": "^1.1.0"` and `node_modules/@mssio/qpdf-wasm/package.json` says `"version": "1.1.0"`.
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `npm test`
+Expected: all PASS, including `progress`.
+
+- [ ] **Step 6: Confirm the precache still holds the wasm**
+
+Run: `npm run build && grep -o 'qpdf[^"]*\.wasm' dist/sw.js`
+Expected: one match (e.g. `assets/qpdf-XXXX.wasm`); the build doesn't fail on the 3 MB limit.
+
+- [ ] **Step 7: Lint, commit, push**
+
+```bash
+npm run lint
+git add package.json package-lock.json src/lib/qpdf.integration.test.ts
+git commit -m "chore: upgrade @mssio/qpdf-wasm to 1.1.0 (write progress)"
+git push -u origin feat/progress-bar
+```
+
+---
+
+### Task 2: Stall-based time limit in `runWithTimeLimits`
+
+**Files:**
+- Modify: `src/lib/qpdf.ts` (next to `ENGINE_LOAD_TIMEOUT_MS`, line ~44)
+- Modify: `src/lib/run-job.ts`
+- Test: `src/lib/run-job.test.ts`
+
+**Interfaces:**
+- Consumes: `JobTimeoutError` from `@/lib/qpdf`.
+- Produces:
+  - `export const STALL_TIMEOUT_MS = 30_000` in `src/lib/qpdf.ts`.
+  - `runWithTimeLimits<E, T>({ load, job, loadMs, jobMs, stallMs, onRun })` where `job: (engine: E, progress: (percent: number) => void) => Promise<T>`. `progress(p)` re-arms the job deadline: `p < 100` → `stallMs` from now; `p >= 100` → `jobMs` from now. Calls after the run settled do nothing.
+
+- [ ] **Step 1: Add `stallMs` to the existing tests**
+
+In `src/lib/run-job.test.ts`, every existing `runWithTimeLimits({ … })` call gets `stallMs: 3000` right after `jobMs`. There are five calls. For example the first becomes:
+
+```ts
+    const result = runWithTimeLimits({
+      load: async () => "engine",
+      job: async (engine) => `${engine} done`,
+      loadMs: 1000,
+      jobMs: 1000,
+      stallMs: 3000,
+      onRun,
+    });
+```
+
+- [ ] **Step 2: Write the failing tests**
+
+Add inside the `describe("runWithTimeLimits", …)` block in `src/lib/run-job.test.ts`:
+
+```ts
+  /** A job that never settles on its own; `report` sends progress, `finish` resolves it. */
+  function controllableJob() {
+    const handle: { report: (percent: number) => void; finish: (value: string) => void } = {
+      report: () => {},
+      finish: () => {},
+    };
+    const job = (_engine: string, progress: (percent: number) => void) => {
+      handle.report = progress;
+      return new Promise<string>((resolve) => (handle.finish = resolve));
+    };
+    return { handle, job };
+  }
+
+  const limits = { load: async () => "engine", loadMs: 1000, jobMs: 5000, stallMs: 3000, onRun: () => {} };
+
+  test("steady progress keeps a job alive past the job limit", async () => {
+    const { handle, job } = controllableJob();
+    const result = runWithTimeLimits({ ...limits, job });
+    await vi.advanceTimersByTimeAsync(0); // engine loaded, job started
+    for (let percent = 0; percent < 5; percent++) {
+      handle.report(percent);
+      await vi.advanceTimersByTimeAsync(2000); // 10 s in total, twice jobMs
+    }
+    handle.finish("done");
+    await expect(result).resolves.toBe("done");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test("no progress for stallMs while writing fails with JobTimeoutError", async () => {
+    const { handle, job } = controllableJob();
+    const result = runWithTimeLimits({ ...limits, job });
+    let settled = false;
+    result.catch(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(0);
+    handle.report(10);
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(settled).toBe(false);
+    const assertion = expect(result).rejects.toBeInstanceOf(JobTimeoutError);
+    await vi.advanceTimersByTimeAsync(1);
+    await assertion;
+  });
+
+  test("100 restores the job limit for work after writing", async () => {
+    const { handle, job } = controllableJob();
+    const result = runWithTimeLimits({ ...limits, job });
+    let settled = false;
+    result.catch(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(0);
+    handle.report(50);
+    handle.report(100);
+    await vi.advanceTimersByTimeAsync(4999); // past stallMs, within jobMs
+    expect(settled).toBe(false);
+    const assertion = expect(result).rejects.toBeInstanceOf(JobTimeoutError);
+    await vi.advanceTimersByTimeAsync(1);
+    await assertion;
+  });
+
+  test("progress after the job settled or timed out does nothing", async () => {
+    const done = controllableJob();
+    const finished = runWithTimeLimits({ ...limits, job: done.job });
+    await vi.advanceTimersByTimeAsync(0);
+    done.handle.finish("done");
+    await finished;
+    done.handle.report(50);
+    expect(vi.getTimerCount()).toBe(0);
+
+    const stuck = controllableJob();
+    const timedOut = runWithTimeLimits({ ...limits, job: stuck.job });
+    const assertion = expect(timedOut).rejects.toBeInstanceOf(JobTimeoutError);
+    await vi.advanceTimersByTimeAsync(5000);
+    await assertion;
+    stuck.handle.report(50);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+```
+
+- [ ] **Step 3: Run them to verify they fail**
+
+Run: `npx vitest run src/lib/run-job.test.ts`
+Expected: "steady progress…" FAILS with `JobTimeoutError`, and "no progress for stallMs…" FAILS (it settles only at 5 s). TypeScript isn't checked by Vitest, so the extra `stallMs` doesn't error here.
+
+- [ ] **Step 4: Add the constant**
+
+In `src/lib/qpdf.ts`, directly below `export const ENGINE_LOAD_TIMEOUT_MS = 120_000;`:
+
+```ts
+
+/**
+ * Longest gap allowed between two progress calls while qpdf writes (0–99%). One percent can take
+ * seconds on a phone; the package suggests 30 s. Before the first call and after 100%, jobTimeoutMs applies.
+ */
+export const STALL_TIMEOUT_MS = 30_000;
+```
+
+- [ ] **Step 5: Implement the resettable deadline**
+
+Replace everything from `type TimeLimitedRun` to the end of `src/lib/run-job.ts` with:
+
+```ts
+type TimeLimitedRun<E, T> = {
+  load: () => Promise<E>;
+  /** `progress(percent)` re-arms the job's time limit; see runWithTimeLimits. */
+  job: (engine: E, progress: (percent: number) => void) => Promise<T>;
+  loadMs: number;
+  jobMs: number;
+  /** Longest gap allowed between progress calls below 100%. */
+  stallMs: number;
+  /** Called once the engine has loaded and the job starts. */
+  onRun: () => void;
+};
+
+/**
+ * Loads the engine, then runs the job, each under its own time limit. The job's limit is jobMs until
+ * it reports progress; each report below 100 resets it to stallMs, and 100 resets it to jobMs (for
+ * work after writing). A load that finishes after its limit never starts the job; a job's late
+ * failure after its limit is swallowed; progress after the run settled is ignored.
+ */
+export async function runWithTimeLimits<E, T>({
+  load,
+  job,
+  loadMs,
+  jobMs,
+  stallMs,
+  onRun,
+}: TimeLimitedRun<E, T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let expire = () => {};
+  let settled = false;
+  const arm = (ms: number) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => expire(), ms);
+  };
+  const limit = (ms: number, error: Error) =>
+    new Promise<never>((_, reject) => {
+      expire = () => reject(error);
+      arm(ms);
+    });
+  const progress = (percent: number) => {
+    if (!settled) arm(percent < 100 ? stallMs : jobMs);
+  };
+  try {
+    const engine = await Promise.race([load(), limit(loadMs, new EngineLoadTimeoutError())]);
+    clearTimeout(timer);
+    onRun();
+    const deadline = limit(jobMs, new JobTimeoutError());
+    const work = job(engine, progress);
+    work.catch(() => {}); // if the time limit wins, the job's late failure must not surface as unhandled
+    return await Promise.race([work, deadline]);
+  } finally {
+    settled = true;
+    clearTimeout(timer);
+  }
+}
+```
+
+The `EngineLoadTimeoutError` class and the import at the top of the file stay as they are.
+
+- [ ] **Step 6: Pass `stallMs` from the hook so the app compiles**
+
+In `src/lib/use-qpdf-job.ts`, add `STALL_TIMEOUT_MS,` to the `@/lib/qpdf` import list (after `resetQpdf,`) and add `stallMs: STALL_TIMEOUT_MS,` right after `jobMs: jobTimeoutMs(sizeBytes),`. Task 3 rewrites this hook; this step only keeps `tsc -b` green.
+
+- [ ] **Step 7: Run the tests to verify they pass**
+
+Run: `npx vitest run src/lib/run-job.test.ts`
+Expected: all 9 PASS.
+
+- [ ] **Step 8: Full check, commit, push**
+
+```bash
+npm run lint && npm test && npm run build
+git add src/lib/qpdf.ts src/lib/run-job.ts src/lib/run-job.test.ts src/lib/use-qpdf-job.ts
+git commit -m "feat: stall-based job time limit driven by write progress"
+git push
+```
+
+---
+
+### Task 3: Job progress state, wired into `useQpdfJob`
+
+**Files:**
+- Create: `src/lib/job-progress.ts`
+- Test: `src/lib/job-progress.test.ts`
+- Modify: `src/lib/use-qpdf-job.ts`
+- Modify: `src/components/JobStatus.tsx` (type import only)
+
+**Interfaces:**
+- Consumes: `runWithTimeLimits` (with `job(engine, progress)` and `stallMs`) and `STALL_TIMEOUT_MS` from Task 2.
+- Produces:
+  - `src/lib/job-progress.ts`:
+    - `type JobStatusState = { phase: "load" | "run" | "finishing"; label: string; startedAt: number; sizeBytes: number; percent: number | null }`
+    - `withProgress(status: JobStatusState | null, percent: number): JobStatusState | null`
+    - `createOnProgress({ isCurrent, rearm, setStatus }): (percent: number) => void`
+  - `useQpdfJob().run<T>(job: (qpdf: Qpdf, onProgress: (percent: number) => void) => Promise<T>, { label, sizeBytes })`. Callers that ignore the second argument keep working.
+  - `use-qpdf-job.ts` no longer exports `JobStatusState`; import it from `@/lib/job-progress`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `src/lib/job-progress.test.ts`:
+
+```ts
+import { describe, expect, test, vi } from "vitest";
+
+import { createOnProgress, type JobStatusState, withProgress } from "@/lib/job-progress";
+
+const running: JobStatusState = { phase: "run", label: "Encrypting…", startedAt: 1000, sizeBytes: 42, percent: null };
+
+describe("withProgress", () => {
+  test("0–99 shows the bar at that percent and keeps the rest of the status", () => {
+    expect(withProgress(running, 0)).toEqual({ ...running, phase: "run", percent: 0 });
+    expect(withProgress(running, 62)).toEqual({ ...running, phase: "run", percent: 62 });
+    expect(withProgress(running, 99)).toEqual({ ...running, phase: "run", percent: 99 });
+  });
+
+  test("100 switches to finishing without a bar", () => {
+    expect(withProgress({ ...running, percent: 99 }, 100)).toEqual({ ...running, phase: "finishing", percent: null });
+  });
+
+  test("a job that already ended stays ended", () => {
+    expect(withProgress(null, 50)).toBeNull();
+  });
+});
+
+describe("createOnProgress", () => {
+  function setup(current: boolean) {
+    let status: JobStatusState | null = running;
+    const rearm = vi.fn();
+    const setStatus = vi.fn((update: (s: JobStatusState | null) => JobStatusState | null) => {
+      status = update(status);
+    });
+    const onProgress = createOnProgress({ isCurrent: () => current, rearm, setStatus });
+    return { onProgress, rearm, setStatus, status: () => status };
+  }
+
+  test("the shown job's progress re-arms its time limit and updates the status", () => {
+    const { onProgress, rearm, status } = setup(true);
+    onProgress(40);
+    expect(rearm).toHaveBeenCalledWith(40);
+    expect(status()).toMatchObject({ phase: "run", percent: 40 });
+  });
+
+  test("a stale job still re-arms its own time limit but never touches the status", () => {
+    const { onProgress, rearm, setStatus } = setup(false);
+    onProgress(40);
+    expect(rearm).toHaveBeenCalledWith(40); // else it would time out and reset the engine under the new job
+    expect(setStatus).not.toHaveBeenCalled();
+  });
+});
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `npx vitest run src/lib/job-progress.test.ts`
+Expected: FAIL with "Failed to resolve import "@/lib/job-progress"".
+
+- [ ] **Step 3: Implement**
+
+Create `src/lib/job-progress.ts`:
+
+```ts
+/** What a running job is doing, for JobStatus. */
+export type JobStatusState = {
+  /** load: engine loading; run: qpdf working; finishing: qpdf wrote 100%, the job's last steps run. */
+  phase: "load" | "run" | "finishing";
+  label: string;
+  startedAt: number;
+  sizeBytes: number;
+  /** qpdf's write progress, 0–99; null before qpdf starts writing and once it reaches 100. */
+  percent: number | null;
+};
+
+/** The status after a write-progress call. A job that already ended (null) stays ended. */
+export function withProgress(status: JobStatusState | null, percent: number): JobStatusState | null {
+  if (!status) return null;
+  return percent >= 100 ? { ...status, phase: "finishing", percent: null } : { ...status, phase: "run", percent };
+}
+
+type ProgressWiring = {
+  /** False once the screen no longer shows this job (reset, unmount, a newer job). */
+  isCurrent: () => boolean;
+  /** Re-arms this job's time limit (runWithTimeLimits' `progress`). */
+  rearm: (percent: number) => void;
+  setStatus: (update: (status: JobStatusState | null) => JobStatusState | null) => void;
+};
+
+/** The `onProgress` one job receives. */
+export function createOnProgress({ isCurrent, rearm, setStatus }: ProgressWiring): (percent: number) => void {
+  return (percent) => {
+    // Always re-arm: a stale job still occupies the shared engine, and if its limit expired,
+    // resetQpdf() would kill the engine under the job the user started since.
+    rearm(percent);
+    if (isCurrent()) setStatus((status) => withProgress(status, percent));
+  };
+}
+```
+
+- [ ] **Step 4: Run them to verify they pass**
+
+Run: `npx vitest run src/lib/job-progress.test.ts`
+Expected: 5 PASS.
+
+- [ ] **Step 5: Wire it into the hook**
+
+In `src/lib/use-qpdf-job.ts`:
+
+1. Add the import below the `crash-guard` import:
+
+```ts
+import { createOnProgress, type JobStatusState } from "@/lib/job-progress";
+```
+
+2. Delete these two lines:
+
+```ts
+/** What a running job is doing, for JobStatus. */
+export type JobStatusState = { phase: JobPhase; label: string; startedAt: number; sizeBytes: number };
+```
+
+3. Replace the doc comment of `useQpdfJob` and the `run` callback's opening, from `/**\n * Busy, status and error state` through the closing `});` of `runWithTimeLimits({ … })`, with:
+
+```ts
+/**
+ * Busy, status and error state for one qpdf job at a time. Results and progress that arrive after
+ * reset() or unmount are dropped, so a slow job can't overwrite a newer screen. The job receives an
+ * `onProgress` to pass to the qpdf call that writes its download (only that one). An engine that
+ * doesn't load within ENGINE_LOAD_TIMEOUT_MS, or a job that exceeds its time limit (see
+ * runWithTimeLimits), fails with a clear message and the (presumably stuck) engine is replaced.
+ */
+export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ErrorDescription | null>(null);
+  const [status, setStatus] = useState<JobStatusState | null>(null);
+  /** How long the last successful job took, for the result page. */
+  const [lastDurationMs, setLastDurationMs] = useState<number | null>(null);
+  const generation = useRef(0);
+
+  useEffect(
+    () => () => {
+      generation.current++;
+    },
+    [],
+  );
+
+  const run = useCallback(
+    async <T>(
+      job: (qpdf: Qpdf, onProgress: (percent: number) => void) => Promise<T>,
+      { label, sizeBytes }: RunOptions,
+    ): Promise<T | null> => {
+      const id = ++generation.current;
+      const isCurrent = () => id === generation.current;
+      const startedAt = Date.now();
+      setBusy(true);
+      setError(null);
+      setStatus({ phase: "load", label, startedAt, sizeBytes, percent: null });
+      setLastDurationMs(null);
+      let phase: JobPhase = "load";
+      markJobStarted();
+      try {
+        const result = await runWithTimeLimits({
+          load: getQpdf,
+          job: (qpdf, progress) => job(qpdf, createOnProgress({ isCurrent, rearm: progress, setStatus })),
+          loadMs: ENGINE_LOAD_TIMEOUT_MS,
+          jobMs: jobTimeoutMs(sizeBytes),
+          stallMs: STALL_TIMEOUT_MS,
+          onRun: () => {
+            phase = "run";
+            if (isCurrent()) setStatus({ phase: "run", label, startedAt, sizeBytes, percent: null });
+          },
+        });
+```
+
+4. In the rest of `run`, replace the three remaining `id !== generation.current` / `id === generation.current` checks with `!isCurrent()` / `isCurrent()`. The `catch` and `finally` bodies are otherwise unchanged.
+
+`JobPhase` stays imported from `@/lib/qpdf` and is still used for errors. `describeQpdfError` is unchanged.
+
+- [ ] **Step 6: Point `JobStatus` at the new type**
+
+In `src/components/JobStatus.tsx` replace:
+
+```ts
+import type { JobStatusState } from "@/lib/use-qpdf-job";
+```
+
+with:
+
+```ts
+import type { JobStatusState } from "@/lib/job-progress";
+```
+
+Run `grep -rn "JobStatusState" src e2e` and make sure no other file imports it from `use-qpdf-job`.
+
+- [ ] **Step 7: Full check, commit, push**
+
+```bash
+npm run lint && npm test && npm run build
+git add src/lib/job-progress.ts src/lib/job-progress.test.ts src/lib/use-qpdf-job.ts src/components/JobStatus.tsx
+git commit -m "feat: job progress state; run() hands each job an onProgress"
+git push
+```
+
+---
+
+### Task 4: Progress bar in `JobStatus`
+
+**Files:**
+- Create: `src/components/ui/progress.tsx`
+- Modify: `src/components/JobStatus.tsx`
+- Modify: `package.json`, `package-lock.json`
+
+**Interfaces:**
+- Consumes: `JobStatusState` (`phase` includes `"finishing"`, `percent: number | null`) from Task 3.
+- Produces: `Progress` (`React.ComponentProps<typeof ProgressPrimitive.Root>`) from `@/components/ui/progress`, rendering `role="progressbar"` with `aria-valuenow` = `value`.
+
+The bar only appears once pages pass `onProgress` (Task 5), so this task is verified by build, lint and the unchanged E2E suite. Task 5 adds the E2E tests that see the bar.
+
+- [ ] **Step 1: Add the Radix package**
+
+```bash
+npm install @radix-ui/react-progress@^1.1.17
+```
+
+- [ ] **Step 2: Add the shadcn primitive**
+
+Create `src/components/ui/progress.tsx` (shadcn new-york v4 `progress`, with per-package Radix import; **`value` is also passed to Root**, which the stock component omits, so Radix sets `aria-valuenow`):
+
+```tsx
+import * as ProgressPrimitive from "@radix-ui/react-progress";
+import * as React from "react";
+
+import { cn } from "@/lib/utils";
+
+function Progress({ className, value, ...props }: React.ComponentProps<typeof ProgressPrimitive.Root>) {
+  return (
+    <ProgressPrimitive.Root
+      data-slot="progress"
+      value={value}
+      className={cn("relative h-2 w-full overflow-hidden rounded-full bg-primary/20", className)}
+      {...props}
+    >
+      <ProgressPrimitive.Indicator
+        data-slot="progress-indicator"
+        className="h-full w-full flex-1 bg-primary transition-all"
+        style={{ transform: `translateX(-${100 - (value ?? 0)}%)` }}
+      />
+    </ProgressPrimitive.Root>
+  );
+}
+
+export { Progress };
+```
+
+- [ ] **Step 3: Render the bar and "Finishing…"**
+
+Replace the whole of `src/components/JobStatus.tsx` with:
+
+```tsx
+import { useEffect, useState } from "react";
+
+import { Progress } from "@/components/ui/progress";
+import { formatElapsed } from "@/lib/format";
+import type { JobStatusState } from "@/lib/job-progress";
+
+const LARGE_FILE_BYTES = 50 * 1024 * 1024;
+
+const STEP_TEXT: Record<Exclude<JobStatusState["phase"], "run">, string> = {
+  load: "Loading the PDF engine…",
+  finishing: "Finishing…",
+};
+
+/**
+ * The running job's step and elapsed time, plus a hint for large files. While qpdf writes, a bar
+ * shows its progress; after 100% the step reads "Finishing…" (the job may still check the output).
+ */
+export function JobStatus({ status }: { status: JobStatusState | null }) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!status) return;
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [status]);
+
+  if (!status) return null;
+  const step = status.phase === "run" ? status.label : STEP_TEXT[status.phase];
+  return (
+    <div className="grid gap-1.5 text-sm text-muted-foreground">
+      <div role="status" aria-live="polite" className="grid gap-0.5">
+        <p className="tabular-nums">
+          {step}{" "}
+          {/* Not announced: a live region that changes every second would drown out screen readers. */}
+          <span aria-hidden="true">{formatElapsed(now - status.startedAt)}</span>
+        </p>
+        {status.sizeBytes > LARGE_FILE_BYTES ? <p className="text-xs">Large files can take a few minutes on phones.</p> : null}
+      </div>
+      {status.percent !== null ? (
+        // Outside the live region: screen readers can query the bar, but percentages aren't announced.
+        <div className="flex items-center gap-2">
+          <Progress value={status.percent} aria-label={status.label} className="flex-1" />
+          <span aria-hidden="true" className="w-9 text-right text-xs tabular-nums">
+            {status.percent}%
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+```
+
+Note: the `useEffect` dependency on `status` now changes up to 100 times per job, which restarts the 1 s interval each time. Each restart comes with a render that refreshes the elapsed time anyway, so leave it.
+
+- [ ] **Step 4: Full check including E2E (nothing visible may change yet)**
+
+```bash
+npm run lint && npm test && npm run test:e2e
+```
+
+Expected: all PASS. In particular, `e2e/job-safeguard.spec.ts` still finds "Loading the PDF engine… 0:05" and "Compressing… m:ss".
+
+- [ ] **Step 5: Commit, push**
+
+```bash
+git add package.json package-lock.json src/components/ui/progress.tsx src/components/JobStatus.tsx
+git commit -m "feat: progress bar and Finishing step in JobStatus"
+git push
+```
+
+---
+
+### Task 5: Pages pass `onProgress`; E2E proof
+
+**Files:**
+- Modify: `src/pages/DecryptPage.tsx`, `src/pages/EncryptPage.tsx`, `src/pages/MergePage.tsx`, `src/pages/ExtractPage.tsx`, `src/pages/CompressPage.tsx`
+- Modify: `src/test/make-pdf.ts`
+- Modify: `e2e/global-setup.ts`, `e2e/helpers.ts`
+- Test: `e2e/job-safeguard.spec.ts`, `e2e/info.spec.ts`
+
+**Interfaces:**
+- Consumes: `run(job: (qpdf, onProgress) => …)` (Task 3), `JobStatus` bar with `role="progressbar"`, `aria-valuenow` and the live region `[aria-live]` (Task 4).
+- Produces: `makePdf(pages, { fillerBytes })`; E2E helpers `recordProgress(page)` and `recordedProgress(page)`; fixture `twenty-mb.pdf` (400 pages, ~20 MB, compresses smaller).
+
+- [ ] **Step 1: Add a slow-to-write option to `makePdf`**
+
+In `src/test/make-pdf.ts`:
+
+1. Change the doc comment's first line and the signature:
+
+```ts
+/**
+ * Builds a valid, uncompressed PDF in memory: `pages` Letter pages (or `size`), a correct xref table,
+ * and an optional Info dictionary with Title, Author and CreationDate. `fillerBytes` adds a comment
+ * of that many printable characters to each page's content stream, so the PDF is big and takes a
+ * while to write (for progress tests).
+ */
+export function makePdf(
+  pages: number,
+  options: { title?: string; size?: [number, number]; fillerBytes?: number } = {},
+): Uint8Array<ArrayBuffer> {
+```
+
+2. Replace the `const text = …` line inside the page loop with:
+
+```ts
+    const text =
+      `BT /F1 24 Tf 72 700 Td (Page ${i}) Tj ET` + (options.fillerBytes ? `\n%${filler(options.fillerBytes, i)}` : "");
+```
+
+3. Append below `makePdf`:
+
+```ts
+/** `length` printable ASCII characters (33–122), deterministic per `seed`; a PDF comment can hold them. */
+function filler(length: number, seed: number): string {
+  const chars: string[] = [];
+  let state = seed;
+  for (let i = 0; i < length; i++) {
+    state = (state * 1103515245 + 12345) & 0x7fffffff;
+    chars.push(String.fromCharCode(33 + ((state >>> 16) % 90)));
+  }
+  return chars.join("");
+}
+```
+
+- [ ] **Step 2: Generate the fixture**
+
+In `e2e/global-setup.ts`, after the `linearized.pdf` line:
+
+```ts
+    // Real and ~20 MB: writing it takes long enough for the progress bar to render.
+    await writeFile(fixture("twenty-mb.pdf"), makePdf(400, { fillerBytes: 50_000 }));
+```
+
+- [ ] **Step 3: Add the progress recorder to the E2E helpers**
+
+Append to `e2e/helpers.ts`:
+
+```ts
+export type RecordedProgress = { values: number[]; insideLiveRegion: boolean };
+
+/**
+ * Records every value the job progress bar shows (deduplicated, in order) and whether the bar ever sat
+ * inside an aria-live region. Call before page.goto; read with recordedProgress(). Recording avoids
+ * racing a bar that may only be visible for a fraction of a second.
+ */
+export async function recordProgress(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const record = { values: [] as number[], insideLiveRegion: false };
+    Object.assign(window, { __progress: record });
+    new MutationObserver(() => {
+      const bar = document.querySelector('[role="progressbar"]');
+      const value = bar?.getAttribute("aria-valuenow");
+      if (!bar || value == null) return;
+      if (bar.closest("[aria-live]")) record.insideLiveRegion = true;
+      if (Number(value) !== record.values.at(-1)) record.values.push(Number(value));
+    }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-valuenow"] });
+  });
+}
+
+export async function recordedProgress(page: Page): Promise<RecordedProgress> {
+  return page.evaluate(() => (window as unknown as { __progress: RecordedProgress }).__progress);
+}
+```
+
+- [ ] **Step 4: Write the failing E2E tests**
+
+In `e2e/job-safeguard.spec.ts`, change the helpers import to:
+
+```ts
+import { chooseFiles, download, inspectPdf, type RecordedProgress, recordedProgress, recordProgress } from "./helpers";
+```
+
+and append:
+
+```ts
+/** The bar showed, its values only rose, at least one sat between 1 and 99, and it was never announced. */
+function expectRisingBar({ values, insideLiveRegion }: RecordedProgress) {
+  expect(values.length).toBeGreaterThan(0);
+  expect(values.every((percent, i) => i === 0 || percent > values[i - 1])).toBe(true);
+  expect(values.every((percent) => percent >= 0 && percent <= 99)).toBe(true);
+  expect(values.some((percent) => percent >= 1 && percent <= 99)).toBe(true);
+  expect(insideLiveRegion).toBe(false);
+}
+
+test("compressing shows a rising progress bar, then the result", async ({ page }) => {
+  await recordProgress(page);
+  await page.goto("/compress");
+  await chooseFiles(page, "twenty-mb.pdf");
+  await page.getByRole("button", { name: "Compress", exact: true }).click();
+  await expect(page.getByText("Your PDF is smaller")).toBeVisible();
+  expectRisingBar(await recordedProgress(page));
+  await expect(page.getByRole("progressbar")).toHaveCount(0);
+  const file = await download(page, "Download compressed PDF");
+  expect(await inspectPdf(file.path)).toMatchObject({ pageCount: 400, encrypted: false });
+});
+
+test("encrypting shows a rising progress bar, then the result", async ({ page }) => {
+  await recordProgress(page);
+  await page.goto("/encrypt");
+  await chooseFiles(page, "twenty-mb.pdf");
+  await page.getByLabel("Password to open", { exact: true }).fill("secret");
+  await page.getByLabel("Confirm password", { exact: true }).fill("secret");
+  await page.getByRole("button", { name: "Encrypt", exact: true }).click();
+  await expect(page.getByText("Your PDF is protected")).toBeVisible();
+  expectRisingBar(await recordedProgress(page));
+  const file = await download(page, "Download protected PDF");
+  expect(await inspectPdf(file.path, "secret")).toMatchObject({ pageCount: 400, encrypted: true });
+});
+```
+
+In `e2e/info.spec.ts`, change the helpers import to `import { chooseFiles, recordedProgress, recordProgress } from "./helpers";` and append:
+
+```ts
+test("shows no progress bar (qpdf reports none for Info)", async ({ page }) => {
+  await recordProgress(page);
+  await inspect(page, "twenty-mb.pdf");
+  await expect(row(page, "Pages")).toHaveText("400");
+  expect((await recordedProgress(page)).values).toEqual([]);
+});
+```
+
+- [ ] **Step 5: Run them to verify the bar tests fail**
+
+Run: `npm run test:e2e -- e2e/job-safeguard.spec.ts e2e/info.spec.ts`
+Expected: the two "rising progress bar" tests FAIL at `expect(values.length).toBeGreaterThan(0)` (no page passes `onProgress` yet). The Info test PASSES. If the fixture step itself fails, fix that first.
+
+- [ ] **Step 6: Pass `onProgress` to each writing call**
+
+`src/pages/DecryptPage.tsx`:
+
+```tsx
+    const output = await job.run(async (qpdf, onProgress) => {
+      const decrypted = await qpdf.decrypt(file, { password, onProgress });
+```
+
+`src/pages/EncryptPage.tsx`:
+
+```tsx
+    const output = await job.run(async (qpdf, onProgress) => {
+      await ensureNoOpenPassword(qpdf, file);
+      const encrypted = await qpdf.encrypt(file, {
+        userPassword: password,
+        ownerPassword: generateOwnerPassword(),
+        allow,
+        onProgress,
+      });
+```
+
+`src/pages/MergePage.tsx`:
+
+```tsx
+    const merged = await job.run(async (qpdf, onProgress) => {
+```
+
+and
+
+```tsx
+      const { output, warnings } = await qpdf.merge(files, { onProgress });
+```
+
+`src/pages/ExtractPage.tsx`: only the submit job (the "Counting pages…" job stays as it is):
+
+```tsx
+    const extracted = await job.run(async (qpdf, onProgress) => {
+      const { output, warnings } = await qpdf.selectPages(file, normalized, { onProgress });
+```
+
+`src/pages/CompressPage.tsx`:
+
+```tsx
+    const output = await job.run(async (qpdf, onProgress) => {
+      await ensureNoOpenPassword(qpdf, file);
+      const compressed = await qpdf.compress(file, { onProgress });
+```
+
+Check that `InfoPage.tsx` is untouched: `grep -n onProgress src/pages/InfoPage.tsx` prints nothing.
+
+The existing test "a running job shows a step and a timer" in `e2e/job-safeguard.spec.ts` can now catch the brief "Finishing…" step. Widen its regex:
+
+```ts
+  await expect(page.getByText(/^(Loading the PDF engine…|Compressing…|Finishing…) \d+:\d\d$/)).toBeVisible();
+```
+
+- [ ] **Step 7: Run the E2E suite**
+
+Run: `npm run test:e2e`
+Expected: all PASS. If a "rising progress bar" test is flaky only on `values.length` or the 1–99 check (the write finished before React rendered a frame), raise the fixture to `makePdf(800, { fillerBytes: 50_000 })` and the expected `pageCount` in both tests and the Info test to 800. Don't weaken the assertions.
+
+- [ ] **Step 8: Full check, commit, push**
+
+```bash
+npm run lint && npm test && npm run build
+git add src/pages src/test/make-pdf.ts e2e/global-setup.ts e2e/helpers.ts e2e/job-safeguard.spec.ts e2e/info.spec.ts
+git commit -m "feat: show write progress in Decrypt, Encrypt, Merge, Extract and Compress"
+git push
+```
+
+---
+
+### Task 6: Docs, version and release gate
+
+**Files:**
+- Modify: `package.json`, `package-lock.json` (version)
+- Modify: `CHANGELOG.md`, `AGENTS.md`, `docs/todo.md`
+
+**Interfaces:**
+- Consumes: names from Tasks 1–5 (`STALL_TIMEOUT_MS`, `src/lib/job-progress.ts`, `src/components/ui/progress.tsx`, `twenty-mb.pdf`).
+- Produces: documentation only.
+
+- [ ] **Step 1: Bump the version**
+
+```bash
+npm version 1.1.0 --no-git-tag-version
+```
+
+Expected: `package.json` and `package-lock.json` read `1.1.0`. The footer shows `__APP_VERSION__`, so no code change is needed.
+
+- [ ] **Step 2: Changelog**
+
+In `CHANGELOG.md`, insert above `## [1.0.0] - 2026-10-07`:
+
+```markdown
+## [1.1.0] - Unreleased
+
+### Added
+
+- A progress bar while the PDF is being written (Decrypt, Encrypt, Merge, Extract pages, Compress),
+  then "Finishing…" for the last checks.
+
+### Changed
+
+- A stuck PDF engine is detected sooner: once a job reports progress, it stops after 30 seconds
+  without any.
+- `@mssio/qpdf-wasm` 1.1.0 (same qpdf 12.4.2 and the same `qpdf.wasm`; it adds progress reporting).
+```
+
+The owner replaces `Unreleased` with the date when releasing.
+
+- [ ] **Step 3: `AGENTS.md`**
+
+1. In "Map", after the `src/components/ui/secret-input.tsx` line add:
+
+```
+src/components/ui/progress.tsx  shadcn Progress; passes `value` to Radix so `aria-valuenow` is set
+```
+
+and after the `src/lib/use-qpdf-job.ts` line add:
+
+```
+src/lib/job-progress.ts   JobStatusState; turns qpdf write progress into status (drops stale jobs)
+```
+
+2. In "qpdf rules", replace the bullet that starts `- Run jobs through \`useQpdfJob().run(async (qpdf) => …` (through `("Finished in m:ss.").`) with:
+
+```markdown
+- Run jobs through `useQpdfJob().run(async (qpdf, onProgress) => …, { label: "Encrypting…", sizeBytes })`; it maps
+  errors with `describeQpdfError`, ignores results and progress after `reset()` or unmount, shows the step via
+  `<JobStatus status={job.status} />`, and enforces limits via `runWithTimeLimits` (`src/lib/run-job.ts`): the engine must load within
+  `ENGINE_LOAD_TIMEOUT_MS`; the job then has `jobTimeoutMs(sizeBytes)`, except that while qpdf reports 0–99%
+  each report allows `STALL_TIMEOUT_MS` (30 s) until the next, and 100% restores `jobTimeoutMs`;
+  on any timeout the stuck engine is replaced (`resetQpdf()`). `label` and `sizeBytes` are required:
+  always pass the real input size. Pass `durationMs={job.lastDurationMs}` to `ResultCard` ("Finished in m:ss.").
+- Pass `onProgress` **only** to the qpdf call that writes the download (`decrypt`, `encrypt`, `merge`,
+  `selectPages`, `compress`): never to `ensureNoOpenPassword`, `info()` or `run()`. `JobStatus` shows a bar for
+  0–99% and "Finishing…" after 100%; a second writing call would restart the bar.
+```
+
+3. Replace the "Known package issue" paragraph with:
+
+```markdown
+`@mssio/qpdf-wasm` 1.0.0 (qpdf 12.4.2) runs out of wasm memory on large inputs: encrypt threw
+`std::bad_alloc` at 400 MB and at 600 MB resolved with a near-empty output instead of rejecting.
+That's why `assertOutput()` guards every download and why `MAX_TOTAL_BYTES` is 250 MB. 1.1.0 ships the
+byte-identical `qpdf.wasm` (same SHA-256), so this still holds. Re-check both if a later upgrade changes the wasm.
+```
+
+- [ ] **Step 4: `docs/todo.md`**
+
+1. Replace the intro paragraph's last two sentences ("For the next release, add its owner checks here …") with:
+
+```markdown
+Release 1.1.0 (progress bar) is in progress; its owner checks are below. Don't release until
+`npm run test:e2e` passes and every box is ticked.
+```
+
+2. Add two rows to the automated-check table, after the `e2e/job-safeguard.spec.ts` row:
+
+```markdown
+| While qpdf writes, a progress bar rises (0–99%, never inside the announced status), then the result; checked for Compress and Encrypt on a 20 MB, 400-page PDF and verified with `inspectPdf` | `e2e/job-safeguard.spec.ts` |
+| Info shows no progress bar | `e2e/info.spec.ts` |
+```
+
+3. Insert a new section above `## Next versions`:
+
+```markdown
+## Owner checks for 1.1.0
+
+- [ ] Real iPhone: Compress and Encrypt a ~200 MB PDF. The bar moves, "Finishing…" shows, the download opens, and no "took too long" message appears.
+- [ ] Desktop browser: the same with a large PDF. The bar moves smoothly and the result is correct.
+- [ ] Installed PWA: after closing every tab and reopening online, the footer shows 1.1.0, and the app still works offline.
+```
+
+4. Replace the "Next versions" paragraph with:
+
+```markdown
+1.1.0 (real progress bar): spec [2026-10-09-progress-bar-design.md](superpowers/specs/2026-10-09-progress-bar-design.md),
+plan [2026-10-09-progress-bar.md](superpowers/plans/2026-10-09-progress-bar.md). Later versions are planned in
+`docs/notes/`: [1.2.0](notes/1.2.0-plan.md) (page grid, Organize, images in Merge). When a release starts, copy
+its owner checks here as unticked boxes; this file stays the release gate.
+```
+
+- [ ] **Step 5: Final verification**
+
+```bash
+npm run lint && npm test && npm run build && grep -o 'qpdf[^"]*\.wasm' dist/sw.js && npm run test:e2e
+```
+
+Expected: everything passes, and the wasm is listed in the precache.
+
+- [ ] **Step 6: Commit, push, open a PR (no merge)**
+
+```bash
+git add package.json package-lock.json CHANGELOG.md AGENTS.md docs/todo.md
+git commit -m "docs: 1.1.0 changelog, AGENTS rules for progress, owner checks"
+git push
+gh pr create --base main --head feat/progress-bar --title "1.1.0: progress bar" --body "Implements docs/superpowers/specs/2026-10-09-progress-bar-design.md. Owner checks in docs/todo.md are unticked; merge and release need the owner's go-ahead."
+```
+
+Add the PR attribution footer from the session's instructions to the body. Don't merge, tag or release.
