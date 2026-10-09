@@ -21,7 +21,8 @@ Current version: **1.0.0** ([changelog](CHANGELOG.md)).
 Only Decrypt accepts PDFs that need a password to open; the other tools ask you to decrypt first.
 PDFs that open without a password but carry restrictions work everywhere.
 
-**Size limit:** 250 MB combined per operation (phones and computers). Big files take minutes on a
+**Size limit:** 250 MB combined per operation on computers, 200 MB on phones (larger files ran an
+iPhone out of memory). Big files take minutes on a
 phone; while a job runs the app shows its step and elapsed time. If the browser kills the page mid-job
 the app explains it after the reload, and a job that never finishes times out with a clear message
 instead of spinning forever. qpdf's

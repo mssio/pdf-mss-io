@@ -19,7 +19,7 @@ Web Worker). It is a PWA that works offline. Design spec:
   `ensureNoOpenPassword(qpdf, file)` first and shows "Remove its password with Decrypt first".
   Restriction-only PDFs (owner password only) are accepted everywhere. No password fields outside
   Decrypt.
-- **Size limit:** `MAX_TOTAL_BYTES` (250 MB) and the phone hard limit `PHONE_MAX_BYTES` (250 MB, separate so it can be lowered) in `src/lib/limits.ts`
+- **Size limit:** `MAX_TOTAL_BYTES` (250 MB) and the phone hard limit `PHONE_MAX_BYTES` (200 MB: 245 MB crashed Encrypt/Decrypt on an iPhone) in `src/lib/limits.ts`
   are the only source of these numbers.
 
 ## Map

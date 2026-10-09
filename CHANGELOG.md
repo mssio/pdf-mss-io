@@ -21,6 +21,8 @@ All notable changes to this project are documented here. The format follows
   without any.
 - Big files on phones: the engine's memory is freed before the download is built, and a reload while
   building it now shows the "page reloaded" notice.
+- Phones accept up to 200 MB per operation (was 250 MB): encrypting or decrypting 245 MB ran an iPhone
+  out of memory. Computers keep 250 MB.
 - `@mssio/qpdf-wasm` 1.1.0 (same qpdf 12.4.2 and the same `qpdf.wasm`; it adds progress reporting).
 
 ## [1.0.0] - 2026-10-07

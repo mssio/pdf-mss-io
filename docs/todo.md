@@ -48,7 +48,7 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 - [x] Desktop browser: the same with a large PDF. The bar moves smoothly and the result is correct.
 - [ ] Update prompt on the iPhone: with the app installed from a test build, serve a newer test build. Within a minute of returning to the app, "Update available" shows; Later puts "Update to the latest version" in the footer; updating shows the new build code in the footer.
 - [ ] Fresh install on the iPhone (site data cleared): the footer goes "Downloading for offline use… n%" → "Ready offline"; then offline, every tool opens and Decrypt works.
-- [ ] iPhone, 245 MB PDF, offline and online: Encrypt, Compress and Decrypt each finish with a download. If any reloads (now with the "page reloaded" notice), note the largest size that worked; PHONE_MAX_BYTES is lowered to it before release.
+- [ ] iPhone, 200 MB PDF (the new phone limit), offline and online: Encrypt, Compress and Decrypt each finish with a download, and a 245 MB PDF is refused with "On phones, files must be 200 MB or less…". (2026-10-09: at 245 MB Encrypt and Decrypt crashed the page, Compress worked; Encrypt at 200 MB worked, so PHONE_MAX_BYTES is now 200 MB.)
 - [ ] Installed PWA: after closing every tab and reopening online, the footer shows 1.1.0, and the app still works offline.
 
 ## Next versions
