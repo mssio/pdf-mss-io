@@ -52,8 +52,8 @@ export function Component() {
       job.fail("Enter pages like 1-3,7 or 5-z.");
       return;
     }
-    const extracted = await job.run(async (qpdf) => {
-      const { output, warnings } = await qpdf.selectPages(file, normalized);
+    const extracted = await job.run(async (qpdf, onProgress) => {
+      const { output, warnings } = await qpdf.selectPages(file, normalized, { onProgress });
       assertOutput(output);
       logWarnings(warnings);
       return { output, pages: (await qpdf.info(output.slice())).pageCount };

@@ -39,9 +39,9 @@ export function Component() {
       return;
     }
     if (!sizeCheck.ok) return;
-    const output = await job.run(async (qpdf) => {
+    const output = await job.run(async (qpdf, onProgress) => {
       await ensureNoOpenPassword(qpdf, file);
-      const compressed = await qpdf.compress(file);
+      const compressed = await qpdf.compress(file, { onProgress });
       assertOutput(compressed.output);
       logWarnings(compressed.warnings);
       return compressed.output;

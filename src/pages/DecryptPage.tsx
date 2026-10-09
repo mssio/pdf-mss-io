@@ -37,8 +37,8 @@ export function Component() {
       return;
     }
     if (!sizeCheck.ok) return;
-    const output = await job.run(async (qpdf) => {
-      const decrypted = await qpdf.decrypt(file, { password });
+    const output = await job.run(async (qpdf, onProgress) => {
+      const decrypted = await qpdf.decrypt(file, { password, onProgress });
       assertOutput(decrypted.output);
       logWarnings(decrypted.warnings);
       return decrypted.output;

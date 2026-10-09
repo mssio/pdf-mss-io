@@ -47,7 +47,7 @@ export function Component() {
       job.fail(`“${empty.name}” is empty.`);
       return;
     }
-    const merged = await job.run(async (qpdf) => {
+    const merged = await job.run(async (qpdf, onProgress) => {
       let droppedRestrictions = false;
       let pages = 0;
       for (const file of files) {
@@ -55,7 +55,7 @@ export function Component() {
         if (info.encrypted) droppedRestrictions = true;
         pages += info.pageCount;
       }
-      const { output, warnings } = await qpdf.merge(files);
+      const { output, warnings } = await qpdf.merge(files, { onProgress });
       assertOutput(output);
       logWarnings(warnings);
       return { output, summary: { files: files.length, pages, droppedRestrictions } };

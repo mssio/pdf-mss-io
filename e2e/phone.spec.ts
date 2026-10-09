@@ -10,7 +10,7 @@ test.describe("on a phone", () => {
     await chooseFiles(page, "oversize.pdf");
     await expect(
       page.getByText(
-        "On phones, files must be 250 MB or less in total (you selected 260 MB). Use a computer for bigger files.",
+        "On phones, files must be 200 MB or less in total (you selected 260 MB). Use a computer for bigger files.",
       ),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Decrypt", exact: true })).toBeDisabled();

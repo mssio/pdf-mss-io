@@ -1,6 +1,6 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { clearCrashedJob, hadCrashedJob, markJobFinished, markJobStarted } from "@/lib/crash-guard";
+import { clearCrashedJob, guardDownload, hadCrashedJob, markJobFinished, markJobStarted } from "@/lib/crash-guard";
 
 function memoryStorage(): Storage {
   const data = new Map<string, string>();
@@ -72,5 +72,43 @@ describe("crash guard", () => {
   test("no storage at all (tests, old browsers) is ignored", () => {
     expect(hadCrashedJob(undefined)).toBe(false);
     expect(() => markJobStarted(undefined)).not.toThrow();
+  });
+});
+
+describe("guardDownload", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  test("arms the crash note while the download is built and for 2 s after", () => {
+    const storage = memoryStorage();
+    let armedDuringBuild = false;
+    const url = guardDownload(
+      () => {
+        armedDuringBuild = hadCrashedJob(storage);
+        return "blob:x";
+      },
+      { storage },
+    );
+    expect(url).toBe("blob:x");
+    expect(armedDuringBuild).toBe(true);
+    expect(hadCrashedJob(storage)).toBe(true);
+    vi.advanceTimersByTime(1999);
+    expect(hadCrashedJob(storage)).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(hadCrashedJob(storage)).toBe(false);
+  });
+
+  test("a build that throws still clears the note", () => {
+    const storage = memoryStorage();
+    expect(() =>
+      guardDownload(
+        () => {
+          throw new RangeError("out of memory");
+        },
+        { storage },
+      ),
+    ).toThrow(RangeError);
+    vi.advanceTimersByTime(2000);
+    expect(hadCrashedJob(storage)).toBe(false);
   });
 });

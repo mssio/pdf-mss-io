@@ -8,6 +8,8 @@ import {
   jobTimeoutMs,
   OUT_OF_MEMORY_MESSAGE,
   PasswordProtectedError,
+  RELEASE_ENGINE_AFTER_BYTES,
+  shouldReleaseEngine,
   TruncatedOutputError,
   UnreadablePdfError,
 } from "@/lib/qpdf";
@@ -103,5 +105,14 @@ describe("job time limit", () => {
       message:
         "This file took too long to process on this device. It may be too big for its memory. Try a smaller file or a computer.",
     });
+  });
+});
+
+describe("shouldReleaseEngine", () => {
+  test("only after jobs over 50 MB", () => {
+    expect(RELEASE_ENGINE_AFTER_BYTES).toBe(50 * 1024 * 1024);
+    expect(shouldReleaseEngine(RELEASE_ENGINE_AFTER_BYTES)).toBe(false);
+    expect(shouldReleaseEngine(RELEASE_ENGINE_AFTER_BYTES + 1)).toBe(true);
+    expect(shouldReleaseEngine(1024)).toBe(false);
   });
 });

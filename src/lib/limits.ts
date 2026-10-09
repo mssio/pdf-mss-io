@@ -3,11 +3,12 @@ import { formatBytes } from "@/lib/format";
 /** Hard limit for the combined size of a tool's inputs on a computer. qpdf runs out of wasm memory above this. */
 export const MAX_TOTAL_BYTES = 250 * 1024 * 1024;
 /**
- * Hard limit on phones, kept separate so it can be lowered in one line. An iPhone 17 encrypted 100–245 MB
- * in a fresh tab (slowly); failures depend on free memory and are handled by the crash notice and the
- * job time limit (see jobTimeoutMs) instead.
+ * Hard limit on phones. Owner's iPhone test (2026-10-09, 1.1.0): Encrypt and Decrypt of a 245 MB PDF
+ * crashed the page ("A problem repeatedly occurred"), 200 MB worked; Compress managed 245 MB. One limit
+ * covers every tool, so it fits the weakest. Failures below it depend on free memory and are handled by
+ * the crash notice and the job time limit (see jobTimeoutMs).
  */
-export const PHONE_MAX_BYTES = 250 * 1024 * 1024;
+export const PHONE_MAX_BYTES = 200 * 1024 * 1024;
 
 export type SizeCheck = { ok: true } | { ok: false; message: string };
 
@@ -36,11 +37,15 @@ const PHONE_QUERIES = [
   "(pointer: coarse) and (max-height: 500px)", // phone held sideways: wide, but short
 ];
 
+/** A small touch screen in either orientation. */
+export function hasSmallTouchScreen(): boolean {
+  return typeof matchMedia === "function" && PHONE_QUERIES.some((query) => matchMedia(query).matches);
+}
+
 /** A small touch screen in either orientation, or a device that reports little memory (Chromium's deviceMemory). */
 export function isLikelyPhone(): boolean {
   if (typeof navigator === "undefined") return false;
-  const smallTouchScreen =
-    typeof matchMedia === "function" && PHONE_QUERIES.some((query) => matchMedia(query).matches);
+  const smallTouchScreen = hasSmallTouchScreen();
   const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   return smallTouchScreen || (typeof memory === "number" && memory <= 4);
 }

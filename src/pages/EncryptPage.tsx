@@ -57,12 +57,13 @@ export function Component() {
       return;
     }
     if (!sizeCheck.ok) return;
-    const output = await job.run(async (qpdf) => {
+    const output = await job.run(async (qpdf, onProgress) => {
       await ensureNoOpenPassword(qpdf, file);
       const encrypted = await qpdf.encrypt(file, {
         userPassword: password,
         ownerPassword: generateOwnerPassword(),
         allow,
+        onProgress,
       });
       assertOutput(encrypted.output);
       logWarnings(encrypted.warnings);

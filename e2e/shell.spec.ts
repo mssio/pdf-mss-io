@@ -15,7 +15,11 @@ test("header, footer and home grid", async ({ page }) => {
   await expect(header.getByRole("link", { name: "Home" })).toBeVisible();
   await expect(header.getByRole("button", { name: /Switch to (dark|light) mode/ })).toBeVisible();
   await expect(page.locator("footer")).toHaveText(
-    `PDFs are processed locally in your browser. Nothing is uploaded. · Version ${version}`,
+    `PDFs are processed locally in your browser. Nothing is uploaded. · Version ${version} · Not available offline yet`,
+  );
+  await expect(page.locator("footer").getByRole("link", { name: "Not available offline yet" })).toHaveAttribute(
+    "href",
+    "/offline",
   );
   await expect(page.getByRole("link", { name: "Open tool" })).toHaveCount(6);
 });

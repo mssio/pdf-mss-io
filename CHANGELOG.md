@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-10-09
+
+### Added
+
+- A progress bar while the PDF is being written (Decrypt, Encrypt, Merge, Extract pages, Compress),
+  then "Finishing…" for the last checks.
+- While online, the app checks for a newer version and offers to update ("Update available"); "Later"
+  keeps an update button in the footer. It never reloads while a file is being processed.
+- On phones, a banner offers to add PDF Toolbox to the home screen: an Install button on Android, and
+  step-by-step pages with screenshots on iPhone.
+- The footer shows whether the app is ready to use offline; while it is still downloading, "/offline"
+  shows the progress. The first visit works offline as soon as the download finishes.
+
+### Changed
+
+- A stuck PDF engine is detected sooner: once a job reports progress, it stops after 30 seconds
+  without any.
+- Big files on phones: the engine's memory is freed before the download is built, and a reload while
+  building it now shows the "page reloaded" notice.
+- Phones accept up to 200 MB per operation (was 250 MB): encrypting or decrypting 245 MB ran an iPhone
+  out of memory. Computers keep 250 MB.
+- `@mssio/qpdf-wasm` 1.1.0 (same qpdf 12.4.2 and the same `qpdf.wasm`; it adds progress reporting).
+
 ## [1.0.0] - 2026-10-07
 
 First release of the static, client-side PDF Toolbox (replaces the Bun server app).

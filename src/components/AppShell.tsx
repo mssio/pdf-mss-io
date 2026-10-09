@@ -2,12 +2,17 @@ import { Moon, Sun } from "lucide-react";
 import { Link, Outlet } from "react-router";
 
 import { CrashNotice } from "@/components/CrashNotice";
+import { InstallBanner } from "@/components/InstallBanner";
+import { OfflineStatusLink } from "@/components/OfflineStatusLink";
+import { UpdateDialog, UpdateFooterButton } from "@/components/UpdatePrompt";
 import { Button } from "@/components/ui/button";
+import { useAppUpdate } from "@/lib/use-app-update";
 import { useTheme } from "@/lib/use-theme";
 import { tools } from "@/tools";
 
 export function AppShell() {
   const { mode, toggle } = useTheme();
+  const update = useAppUpdate();
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -42,12 +47,19 @@ export function AppShell() {
         </div>
       </header>
       <main className="flex-1">
+        <InstallBanner />
         <CrashNotice />
         <Outlet />
       </main>
       <footer className="border-t border-border/60 py-6 text-center text-xs text-muted-foreground">
         PDFs are processed locally in your browser. Nothing is uploaded. · Version {__APP_VERSION__}
+        {__APP_BUILD_LABEL__ ? ` · ${__APP_BUILD_LABEL__}` : null}
+        {update.updateReady && !update.promptOpen ? (
+          <UpdateFooterButton disabled={update.jobRunning} onUpdate={update.updateNow} />
+        ) : null}
+        <OfflineStatusLink />
       </footer>
+      <UpdateDialog open={update.promptOpen} onLater={update.later} onUpdate={update.updateNow} />
     </div>
   );
 }

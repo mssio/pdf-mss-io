@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { chooseFiles } from "./helpers";
+import { chooseFiles, recordedProgress, recordProgress } from "./helpers";
 
 async function inspect(page: Page, name: string) {
   await page.goto("/info");
@@ -41,4 +41,11 @@ test("linearized PDF shows the badge", async ({ page }) => {
 test("password-protected input is sent to Decrypt", async ({ page }) => {
   await inspect(page, "protected.pdf");
   await expect(page.getByText("This PDF is password-protected. Remove its password with Decrypt first.")).toBeVisible();
+});
+
+test("shows no progress bar (qpdf reports none for Info)", async ({ page }) => {
+  await recordProgress(page);
+  await inspect(page, "twenty-mb.pdf");
+  await expect(row(page, "Pages")).toHaveText("400");
+  expect((await recordedProgress(page)).values).toEqual([]);
 });

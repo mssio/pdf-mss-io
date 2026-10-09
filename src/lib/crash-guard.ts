@@ -52,3 +52,20 @@ export function hadCrashedJob(storage: Storage | undefined = defaultStorage()): 
 export function clearCrashedJob(storage: Storage | undefined = defaultStorage()): void {
   if (storage && !running.get(storage)) removeNote(storage);
 }
+
+/**
+ * Building a download copies the whole output once more, which is when a phone is most likely to run
+ * out of memory, after the job itself has finished. Keeps the crash note for `holdMs` after `build`
+ * returns (or throws), so a reload in that window is explained too.
+ */
+export function guardDownload<T>(
+  build: () => T,
+  { storage = defaultStorage(), holdMs = 2000 }: { storage?: Storage; holdMs?: number } = {},
+): T {
+  markJobStarted(storage);
+  try {
+    return build();
+  } finally {
+    setTimeout(() => markJobFinished(storage), holdMs);
+  }
+}

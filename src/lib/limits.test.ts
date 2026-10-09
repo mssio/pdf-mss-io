@@ -24,8 +24,17 @@ describe("checkSize on a phone", () => {
   test("over the phone limit is rejected and points to a computer", () => {
     expect(checkSize(260 * 1024 * 1024, true)).toEqual({
       ok: false,
-      message: "On phones, files must be 250 MB or less in total (you selected 260 MB). Use a computer for bigger files.",
+      message: "On phones, files must be 200 MB or less in total (you selected 260 MB). Use a computer for bigger files.",
     });
+  });
+
+  test("a 245 MB file (too big for an iPhone's memory) is refused on a phone but fine on a computer", () => {
+    const size = 245 * 1024 * 1024;
+    expect(checkSize(size, true)).toEqual({
+      ok: false,
+      message: "On phones, files must be 200 MB or less in total (you selected 245 MB). Use a computer for bigger files.",
+    });
+    expect(checkSize(size, false)).toEqual({ ok: true });
   });
 });
 

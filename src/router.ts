@@ -17,6 +17,8 @@ export const router = createBrowserRouter([
         children: [
           { path: "/", Component: HomePage },
           ...tools.map((tool) => ({ path: tool.path, lazy: tool.load })),
+          { path: "/install/:step?", lazy: () => import("@/pages/InstallPage") },
+          { path: "/offline", lazy: () => import("@/pages/OfflinePage") },
           { path: "*", Component: NotFoundPage },
         ],
       },
