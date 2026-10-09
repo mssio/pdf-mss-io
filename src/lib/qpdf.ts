@@ -44,6 +44,12 @@ export class JobTimeoutError extends Error {
 export const ENGINE_LOAD_TIMEOUT_MS = 120_000;
 
 /**
+ * Longest gap allowed between two progress calls while qpdf writes (0–99%). One percent can take
+ * seconds on a phone; the package suggests 30 s. Before the first call and after 100%, jobTimeoutMs applies.
+ */
+export const STALL_TIMEOUT_MS = 30_000;
+
+/**
  * Generous time allowed for one job once the engine is loaded: 2 minutes plus 2 minutes per started
  * 25 MB of input (245 MB → 22 minutes). Sized well above an iPhone 17's real timings so slower or
  * throttled phones aren't cut off; it only catches a worker that never answers.

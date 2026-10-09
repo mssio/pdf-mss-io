@@ -11,6 +11,7 @@ import {
   JobTimeoutError,
   jobTimeoutMs,
   resetQpdf,
+  STALL_TIMEOUT_MS,
 } from "@/lib/qpdf";
 import { EngineLoadTimeoutError, runWithTimeLimits } from "@/lib/run-job";
 
@@ -61,6 +62,7 @@ export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) 
           job,
           loadMs: ENGINE_LOAD_TIMEOUT_MS,
           jobMs: jobTimeoutMs(sizeBytes),
+          stallMs: STALL_TIMEOUT_MS,
           onRun: () => {
             phase = "run";
             if (id === generation.current) setStatus({ phase: "run", label, startedAt, sizeBytes });
