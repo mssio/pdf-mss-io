@@ -49,6 +49,9 @@ export default defineConfig({
         // qpdf.wasm is ~2.2 MB, above Workbox's 2 MiB default; without this the build fails.
         maximumFileSizeToCacheInBytes: 3_000_000,
         navigateFallback: '/index.html',
+        // The first install takes over the open page as soon as it finishes, so the first visit works
+        // offline without a relaunch. Updates still wait for "Update now" (registerType 'prompt').
+        clientsClaim: true,
       },
     }),
   ],
