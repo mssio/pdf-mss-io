@@ -1044,6 +1044,15 @@ Add the PR attribution footer from the session's instructions to the body. Don't
 
 qpdf's percent counts objects, so it arrives in bursts. On the iPhone, encrypt first showed the bar at 36% and then jumped ~15% at a time (spec §1). The bar should glide instead. Spec §4 "Indicator motion" and the `ProgressRow` bullet are the requirements.
 
+> **As built (2026-10-09):** Step 1's `values[0]` check in the existing Compress test passed on the old
+> code, because the uniform fixture reports 0 first, so it proved nothing and was dropped. Instead,
+> `spaceOutProgress` now takes `{ gapMs, burstBelow? }`: progress below `burstBelow` is held and delivered
+> in one task with the first value at or above it. A new test, "a bar whose first progress arrives in a
+> burst slides in from 0", uses `{ gapMs: 20, burstBelow: 36 }` and expects `values[0] === 0` and
+> `values[1] >= 35`. Before the fix it failed with `Received: 36`, the iPhone symptom.
+> `compressWithVisibleBar` calls `spaceOutProgress(page, { gapMs: 50 })`. Result: 55/55 E2E;
+> progress tests 30/30 with `--repeat-each=10`.
+
 **Files:**
 - Modify: `src/components/ui/progress.tsx` (Indicator classes)
 - Modify: `src/components/JobStatus.tsx` (new `ProgressRow`)
