@@ -180,3 +180,13 @@ describe("info JSON", () => {
     });
   });
 });
+
+describe("progress", () => {
+  test("compress reports strictly rising write progress that ends at 100", async () => {
+    const seen: number[] = [];
+    await qpdf.compress(pdfFile(makePdf(50)), { onProgress: (percent: number) => seen.push(percent) });
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.at(-1)).toBe(100);
+    expect(seen.every((percent, i) => i === 0 || percent > seen[i - 1])).toBe(true);
+  });
+});
