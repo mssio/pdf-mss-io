@@ -2704,3 +2704,550 @@ git add src/lib/crash-guard.ts src/lib/crash-guard.test.ts src/lib/use-blob-url.
 git commit -m "fix: free engine memory before building big downloads; crash notice covers the download step"
 git push
 ```
+
+---
+
+## Install banner (Task 14), added 2026-10-09
+
+Spec section 10 is the authority. Phones only. The five screenshots are already committed in `public/install/` (personal details removed, address shown as `pdf.mss.io`).
+
+**Extra global constraints:**
+- Strings, exactly:
+  - Android banner: `Install PDF Toolbox` / `to open it like an app and use it offline.` / buttons `Install`, `Not now`.
+  - iOS banner: `Add PDF Toolbox to your Home Screen` / `to open it like an app and use it offline.` / buttons `How`, `Not now`.
+  - The `/install` page texts are as in spec §10.
+- `INSTALL_DISMISS_MS = 30 * 24 * 60 * 60 * 1000`; storage key `pdf-mss-io-install-dismissed`.
+- Never on desktop. Never in the installed app. Never during a job or over a result.
+
+**Review focus:**
+1. Desktop Chrome fires `beforeinstallprompt` too: it must not show a banner (pinned by E2E "desktop").
+2. A `beforeinstallprompt` fired before React mounts must not be lost (module-level capture).
+3. Storage that throws (private mode) must not break the page (unit test).
+4. iOS Chrome/Firefox/Edge must not get Safari-specific steps (unit test).
+
+### Task 14: Install banner and `/install` page
+
+**Files:**
+- Modify: `src/lib/limits.ts` (export `hasSmallTouchScreen`), `vite.config.ts` (add `webp` to `globPatterns`)
+- Create: `src/lib/install-banner.ts`, `src/lib/install-banner.test.ts`, `src/lib/use-install-banner.ts`, `src/components/InstallBanner.tsx`, `src/pages/InstallPage.tsx`, `e2e/install.spec.ts`
+- Modify: `src/router.ts`, `src/components/AppShell.tsx`, `e2e/offline.spec.ts`, `AGENTS.md`, `CHANGELOG.md`, `docs/todo.md`
+
+**Interfaces:**
+- Consumes: `isJobRunning`, `hasUnsavedResult`, `subscribeJobActivity` (job-activity); `Card`, `Button`.
+- Produces:
+  - `hasSmallTouchScreen(): boolean`
+  - `isIosSafari(userAgent: string, maxTouchPoints: number): boolean`
+  - `installBannerKind(input): "android" | "ios" | null`
+  - `readDismissedAt(storage?: Storage): number | null`, `saveDismissedAt(now: number, storage?: Storage): void`
+  - `useInstallBanner(): { kind: "android" | "ios" | null; install: () => void; dismiss: () => void }`
+
+- [ ] **Step 1: Write the failing unit tests**
+
+Create `src/lib/install-banner.test.ts`:
+
+```ts
+import { describe, expect, test } from "vitest";
+
+import { INSTALL_DISMISS_MS, installBannerKind, isIosSafari, readDismissedAt, saveDismissedAt } from "@/lib/install-banner";
+
+const IPHONE_SAFARI =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1";
+const IPHONE_CHROME = IPHONE_SAFARI.replace("Version/26.0", "CriOS/141.0.0.0");
+const IPHONE_FIREFOX = IPHONE_SAFARI.replace("Version/26.0", "FxiOS/143.0");
+const IPHONE_EDGE = IPHONE_SAFARI.replace("Version/26.0", "EdgiOS/141.0");
+const MAC_SAFARI =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
+const ANDROID_CHROME =
+  "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36";
+
+describe("isIosSafari", () => {
+  test("iPhone Safari yes; other iOS browsers no", () => {
+    expect(isIosSafari(IPHONE_SAFARI, 5)).toBe(true);
+    expect(isIosSafari(IPHONE_CHROME, 5)).toBe(false);
+    expect(isIosSafari(IPHONE_FIREFOX, 5)).toBe(false);
+    expect(isIosSafari(IPHONE_EDGE, 5)).toBe(false);
+  });
+
+  test("an iPad reports a Mac user agent but has touch; a real Mac doesn't", () => {
+    expect(isIosSafari(MAC_SAFARI, 5)).toBe(true);
+    expect(isIosSafari(MAC_SAFARI, 0)).toBe(false);
+  });
+
+  test("Android is never iOS", () => {
+    expect(isIosSafari(ANDROID_CHROME, 5)).toBe(false);
+  });
+});
+
+describe("installBannerKind", () => {
+  const now = 1_000_000_000_000;
+  const base = {
+    smallTouchScreen: true,
+    standalone: false,
+    iosSafari: false,
+    promptAvailable: false,
+    dismissedAt: null as number | null,
+    now,
+    busy: false,
+  };
+
+  test("Android with an install prompt → android; iPhone Safari → ios", () => {
+    expect(installBannerKind({ ...base, promptAvailable: true })).toBe("android");
+    expect(installBannerKind({ ...base, iosSafari: true })).toBe("ios");
+  });
+
+  test("no install path → nothing", () => {
+    expect(installBannerKind(base)).toBeNull();
+  });
+
+  test("each condition turns it off", () => {
+    const ready = { ...base, promptAvailable: true };
+    expect(installBannerKind({ ...ready, smallTouchScreen: false })).toBeNull();
+    expect(installBannerKind({ ...ready, standalone: true })).toBeNull();
+    expect(installBannerKind({ ...ready, busy: true })).toBeNull();
+    expect(installBannerKind({ ...ready, dismissedAt: now - 1000 })).toBeNull();
+  });
+
+  test("Not now lasts 30 days", () => {
+    const ready = { ...base, iosSafari: true };
+    expect(installBannerKind({ ...ready, dismissedAt: now - INSTALL_DISMISS_MS + 1 })).toBeNull();
+    expect(installBannerKind({ ...ready, dismissedAt: now - INSTALL_DISMISS_MS })).toBe("ios");
+  });
+});
+
+describe("dismissal storage", () => {
+  function memoryStorage(initial: Record<string, string> = {}): Storage {
+    const data = new Map(Object.entries(initial));
+    return {
+      get length() {
+        return data.size;
+      },
+      clear: () => data.clear(),
+      getItem: (key) => data.get(key) ?? null,
+      key: (index) => [...data.keys()][index] ?? null,
+      removeItem: (key) => void data.delete(key),
+      setItem: (key, value) => void data.set(key, String(value)),
+    };
+  }
+
+  test("round-trips the time", () => {
+    const storage = memoryStorage();
+    expect(readDismissedAt(storage)).toBeNull();
+    saveDismissedAt(1234, storage);
+    expect(readDismissedAt(storage)).toBe(1234);
+  });
+
+  test("garbage reads as never dismissed", () => {
+    expect(readDismissedAt(memoryStorage({ "pdf-mss-io-install-dismissed": "soon" }))).toBeNull();
+  });
+
+  test("storage that throws is ignored", () => {
+    const throwing = {
+      getItem: () => {
+        throw new Error("denied");
+      },
+      setItem: () => {
+        throw new Error("denied");
+      },
+    } as unknown as Storage;
+    expect(readDismissedAt(throwing)).toBeNull();
+    expect(() => saveDismissedAt(1, throwing)).not.toThrow();
+  });
+});
+```
+
+Run: `npx vitest run src/lib/install-banner.test.ts`
+Expected: FAIL ("Failed to resolve import").
+
+- [ ] **Step 2: Implement the pure module**
+
+Create `src/lib/install-banner.ts`:
+
+```ts
+/** "Not now" hides the install banner this long. */
+export const INSTALL_DISMISS_MS = 30 * 24 * 60 * 60 * 1000;
+const KEY = "pdf-mss-io-install-dismissed";
+
+/** Safari on iPhone/iPod/iPad (iPads report a Mac user agent but have touch); not Chrome/Firefox/Edge on iOS. */
+export function isIosSafari(userAgent: string, maxTouchPoints: number): boolean {
+  const ios = /iPhone|iPod|iPad/.test(userAgent) || (/Macintosh/.test(userAgent) && maxTouchPoints > 1);
+  return ios && /Safari\//.test(userAgent) && !/CriOS|FxiOS|EdgiOS/.test(userAgent);
+}
+
+/** Which banner to show, if any (spec section 10). */
+export function installBannerKind({
+  smallTouchScreen,
+  standalone,
+  iosSafari,
+  promptAvailable,
+  dismissedAt,
+  now,
+  busy,
+}: {
+  smallTouchScreen: boolean;
+  standalone: boolean;
+  iosSafari: boolean;
+  promptAvailable: boolean;
+  dismissedAt: number | null;
+  now: number;
+  busy: boolean;
+}): "android" | "ios" | null {
+  if (!smallTouchScreen || standalone || busy) return null;
+  if (dismissedAt !== null && now - dismissedAt < INSTALL_DISMISS_MS) return null;
+  if (promptAvailable) return "android";
+  if (iosSafari) return "ios";
+  return null;
+}
+
+function defaultStorage(): Storage | undefined {
+  try {
+    return typeof localStorage === "undefined" ? undefined : localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+export function readDismissedAt(storage: Storage | undefined = defaultStorage()): number | null {
+  try {
+    const value = Number(storage?.getItem(KEY));
+    return storage?.getItem(KEY) != null && Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveDismissedAt(now: number, storage: Storage | undefined = defaultStorage()): void {
+  try {
+    storage?.setItem(KEY, String(now));
+  } catch {
+    // private mode or disabled storage: the banner shows again next visit
+  }
+}
+```
+
+Run: `npx vitest run src/lib/install-banner.test.ts`
+Expected: PASS.
+
+- [ ] **Step 3: `hasSmallTouchScreen` and the precache**
+
+In `src/lib/limits.ts`, add above `isLikelyPhone` and use it there:
+
+```ts
+/** A small touch screen in either orientation. */
+export function hasSmallTouchScreen(): boolean {
+  return typeof matchMedia === "function" && PHONE_QUERIES.some((query) => matchMedia(query).matches);
+}
+```
+
+and in `isLikelyPhone` replace the `smallTouchScreen` expression with `const smallTouchScreen = hasSmallTouchScreen();`.
+
+In `vite.config.ts`, change `globPatterns` to `['**/*.{js,css,html,svg,png,ico,wasm,webmanifest,webp}']`.
+
+- [ ] **Step 4: Hook, banner, page, route**
+
+Create `src/lib/use-install-banner.ts`:
+
+```ts
+import { useEffect, useState, useSyncExternalStore } from "react";
+
+import { installBannerKind, isIosSafari, readDismissedAt, saveDismissedAt } from "@/lib/install-banner";
+import { hasUnsavedResult, isJobRunning, subscribeJobActivity } from "@/lib/job-activity";
+import { hasSmallTouchScreen } from "@/lib/limits";
+
+type InstallPromptEvent = Event & { prompt: () => Promise<void> };
+
+// Captured at module load: Chrome can fire it before React mounts, and it fires only once per page.
+let savedPrompt: InstallPromptEvent | null = null;
+let installed = false;
+const listeners = new Set<() => void>();
+const notify = () => listeners.forEach((listener) => listener());
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault(); // we show our own banner instead of the browser's mini-infobar
+    savedPrompt = event as InstallPromptEvent;
+    notify();
+  });
+  window.addEventListener("appinstalled", () => {
+    installed = true;
+    savedPrompt = null;
+    notify();
+  });
+}
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+};
+
+function isStandalone(): boolean {
+  const iosStandalone = (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  return iosStandalone || (typeof matchMedia === "function" && matchMedia("(display-mode: standalone)").matches);
+}
+
+/** Whether to offer installing the app on this phone, and the banner's actions (spec section 10). */
+export function useInstallBanner() {
+  const promptAvailable = useSyncExternalStore(subscribe, () => savedPrompt !== null);
+  const justInstalled = useSyncExternalStore(subscribe, () => installed);
+  const busy = useSyncExternalStore(subscribeJobActivity, () => isJobRunning() || hasUnsavedResult());
+  const [dismissedAt, setDismissedAt] = useState(() => readDismissedAt());
+  const [env] = useState(() => ({
+    smallTouchScreen: hasSmallTouchScreen(),
+    standalone: isStandalone(),
+    iosSafari: isIosSafari(navigator.userAgent, navigator.maxTouchPoints ?? 0),
+  }));
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => setNow(Date.now()), [dismissedAt]);
+
+  const kind = justInstalled
+    ? null
+    : installBannerKind({ ...env, promptAvailable, dismissedAt, now, busy });
+
+  return {
+    kind,
+    install: () => {
+      const event = savedPrompt;
+      savedPrompt = null; // usable once
+      notify();
+      void event?.prompt();
+    },
+    dismiss: () => {
+      const at = Date.now();
+      saveDismissedAt(at);
+      setDismissedAt(at);
+    },
+  };
+}
+```
+
+Create `src/components/InstallBanner.tsx`:
+
+```tsx
+import { Link, useLocation } from "react-router";
+
+import { Button } from "@/components/ui/button";
+import { useInstallBanner } from "@/lib/use-install-banner";
+
+/** Phones only: offers adding the app to the home screen (spec section 10). */
+export function InstallBanner() {
+  const { kind, install, dismiss } = useInstallBanner();
+  const { pathname } = useLocation();
+  if (!kind || pathname === "/install") return null;
+  return (
+    <div className="mx-auto max-w-lg px-4 pt-4 sm:px-6">
+      <section
+        aria-label="Install PDF Toolbox"
+        className="grid gap-3 rounded-lg border bg-card p-4 text-sm text-card-foreground shadow-xs"
+      >
+        <p>
+          <strong className="font-semibold">
+            {kind === "android" ? "Install PDF Toolbox" : "Add PDF Toolbox to your Home Screen"}
+          </strong>{" "}
+          to open it like an app and use it offline.
+        </p>
+        <div className="flex gap-2">
+          {kind === "android" ? (
+            <Button size="sm" onClick={install}>
+              Install
+            </Button>
+          ) : (
+            <Button size="sm" asChild>
+              <Link to="/install">How</Link>
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={dismiss}>
+            Not now
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+```
+
+Create `src/pages/InstallPage.tsx`:
+
+```tsx
+import { Link } from "react-router";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+const STEPS = [
+  {
+    text: <>In Safari, tap the menu button at the left of the address bar.</>,
+    image: "/install/ios-1-menu.webp",
+    alt: "Safari's address bar at the bottom of the screen, with the menu button at its left circled.",
+  },
+  { text: <>Tap <strong>Share</strong>.</>, image: "/install/ios-2-share.webp", alt: "Safari's menu with Share highlighted." },
+  {
+    text: <>Scroll down and tap <strong>Add to Home Screen</strong>.</>,
+    image: "/install/ios-3-add-to-home-screen.webp",
+    alt: "The share sheet's list of actions, with Add to Home Screen highlighted at the bottom.",
+  },
+  {
+    text: <>Keep <strong>Open as Web App</strong> on and tap <strong>Add</strong>.</>,
+    image: "/install/ios-4-add.webp",
+    alt: "The Add to Home Screen screen for PDF Toolbox at pdf.mss.io, with the Add button highlighted.",
+  },
+  {
+    text: (
+      <>
+        Open <strong>PDF Toolbox</strong> from your Home Screen. Keep it open while online until the footer says{" "}
+        <strong>Ready offline</strong>.
+      </>
+    ),
+    image: "/install/ios-5-home-screen.webp",
+    alt: "The PDF Toolbox icon on the Home Screen.",
+  },
+];
+
+/** /install: how to add the app to an iPhone's Home Screen, with screenshots. */
+export function Component() {
+  return (
+    <div className="mx-auto max-w-lg px-4 py-10 sm:px-6 sm:py-14">
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h1>Add PDF Toolbox to your Home Screen</h1>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-6">
+          <ol className="grid gap-6">
+            {STEPS.map((step, index) => (
+              <li key={step.image} className="grid gap-2">
+                <p className="text-sm">
+                  <span className="font-semibold">{index + 1}.</span> {step.text}
+                </p>
+                <img src={step.image} alt={step.alt} width={600} className="w-full rounded-md border" />
+              </li>
+            ))}
+          </ol>
+          <p className="text-sm text-muted-foreground">On older iPhones the Share button is at the bottom of the screen.</p>
+          <Button className="w-full sm:w-auto" asChild>
+            <Link to="/">Back to home</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+In `src/router.ts`, add before the `/offline` route: `{ path: "/install", lazy: () => import("@/pages/InstallPage") },`.
+
+In `src/components/AppShell.tsx`, import `InstallBanner` and render `<InstallBanner />` as the first child of `<main>`, before `<CrashNotice />`.
+
+- [ ] **Step 5: E2E**
+
+Create `e2e/install.spec.ts`:
+
+```ts
+import { devices, expect, test, type Page } from "@playwright/test";
+
+import { chooseFiles, spaceOutProgress } from "./helpers";
+
+const banner = (page: Page) => page.getByRole("region", { name: "Install PDF Toolbox" });
+
+/** Dispatches a fake beforeinstallprompt whose prompt() is counted in window.__prompted. */
+async function offerInstall(page: Page) {
+  await page.evaluate(() => {
+    const event = Object.assign(new Event("beforeinstallprompt", { cancelable: true }), {
+      prompt: async () => {
+        (window as unknown as { __prompted: number }).__prompted =
+          ((window as unknown as { __prompted?: number }).__prompted ?? 0) + 1;
+      },
+    });
+    window.dispatchEvent(event);
+  });
+}
+
+test.describe("on an iPhone", () => {
+  const { userAgent, viewport, deviceScaleFactor, isMobile, hasTouch } = devices["iPhone 15"];
+  test.use({ userAgent, viewport, deviceScaleFactor, isMobile, hasTouch });
+
+  test("How shows the steps with screenshots; Not now hides the banner for good", async ({ page }) => {
+    await page.goto("/");
+    await expect(banner(page)).toContainText("Add PDF Toolbox to your Home Screen");
+    await banner(page).getByRole("link", { name: "How" }).click();
+    await expect(page.getByRole("heading", { name: "Add PDF Toolbox to your Home Screen" })).toBeVisible();
+    await expect(banner(page)).toHaveCount(0);
+    const images = page.locator("main ol img");
+    await expect(images).toHaveCount(5);
+    for (const image of await images.all()) {
+      await expect(image).toHaveJSProperty("complete", true);
+      expect(await image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+    }
+    await page.goto("/");
+    await banner(page).getByRole("button", { name: "Not now" }).click();
+    await expect(banner(page)).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator("main h1")).toBeVisible();
+    await expect(banner(page)).toHaveCount(0);
+  });
+
+  test("the installed app shows no banner", async ({ page }) => {
+    await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "standalone", { get: () => true }));
+    await page.goto("/");
+    await expect(page.locator("main h1")).toBeVisible();
+    await expect(banner(page)).toHaveCount(0);
+  });
+
+  test("no banner while a job runs", async ({ page }) => {
+    await spaceOutProgress(page, { gapMs: 50 });
+    await page.goto("/compress");
+    await expect(banner(page)).toBeVisible();
+    await chooseFiles(page, "twenty-mb.pdf");
+    await page.getByRole("button", { name: "Compress", exact: true }).click();
+    await expect(page.getByRole("progressbar")).toBeVisible();
+    await expect(banner(page)).toHaveCount(0);
+  });
+});
+
+test.describe("on an Android phone", () => {
+  test.use({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true });
+
+  test("Install opens the browser's install dialog once", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator("main h1")).toBeVisible();
+    await expect(banner(page)).toHaveCount(0); // no install path until the browser offers one
+    await offerInstall(page);
+    await banner(page).getByRole("button", { name: "Install" }).click();
+    expect(await page.evaluate(() => (window as unknown as { __prompted?: number }).__prompted)).toBe(1);
+    await expect(banner(page)).toHaveCount(0);
+  });
+});
+
+test("desktop never shows the banner, even when the browser offers to install", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("main h1")).toBeVisible();
+  await offerInstall(page);
+  await expect(banner(page)).toHaveCount(0);
+});
+```
+
+In `e2e/offline.spec.ts`, after the `/offline` assertions add:
+
+```ts
+  await page.goto(`${origin}/install`);
+  const shot = page.locator("main ol img").first();
+  await expect(shot).toBeVisible();
+  expect(await shot.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+```
+
+Run: `npm run test:e2e -- e2e/install.spec.ts e2e/offline.spec.ts`
+Expected: PASS. Then prove the desktop test can fail: temporarily make `installBannerKind` ignore `smallTouchScreen`. "desktop never shows…" must FAIL. Revert.
+
+- [ ] **Step 6: Docs**
+
+- `AGENTS.md` Map: `src/lib/install-banner.ts` (pure: who sees the install banner), `src/lib/use-install-banner.ts` (captures beforeinstallprompt), `src/components/InstallBanner.tsx`, `src/pages/InstallPage.tsx` (/install with screenshots in `public/install/`). PWA notes: `webp` is precached; the screenshots must never show personal details (crop the status bar, contacts, other apps; the address must read `pdf.mss.io`).
+- `CHANGELOG.md` 1.1.0 → Added: `- On phones, a banner offers to add PDF Toolbox to the home screen: an Install button on Android, step-by-step screenshots on iPhone.`
+- `docs/todo.md`: automated row `| Install banner: iPhone → How with five screenshots, Not now remembered; Android → Install prompts once; none on desktop, in the installed app or during a job | \`e2e/install.spec.ts\` |`; owner box `- [ ] iPhone Safari (not installed): the banner shows; How's steps match what Safari shows; once added, the app shows no banner.`
+
+- [ ] **Step 7: Full check, commit, push**
+
+```bash
+npm run lint && npm test && npm run build && npm run test:e2e
+git add src/lib/limits.ts vite.config.ts src/lib/install-banner.ts src/lib/install-banner.test.ts src/lib/use-install-banner.ts src/components/InstallBanner.tsx src/pages/InstallPage.tsx src/router.ts src/components/AppShell.tsx e2e/install.spec.ts e2e/offline.spec.ts AGENTS.md CHANGELOG.md docs/todo.md
+git commit -m "feat: install banner on phones; /install steps with screenshots"
+git push
+```

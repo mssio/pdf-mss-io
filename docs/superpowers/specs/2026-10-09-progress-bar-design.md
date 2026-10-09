@@ -3,7 +3,7 @@
 Date: 2026-10-09
 Status: approved; revised 2026-10-09 after an iPhone test (smooth bar motion, section 4) and to add the
 update prompt (section 7), offline readiness status (section 8) and the large-file reload fix
-(section 9); sections 7–9 are drafts for owner review
+(section 9), and the install banner (section 10, draft for owner review)
 
 ## Goal
 
@@ -33,6 +33,7 @@ This spec replaces `docs/notes/1.1.0-plan.md`, deleted in the commit that adds t
 | Update prompt | In 1.1.0 (owner, 2026-10-09). Checks hourly, when the app returns to the foreground and when the device comes back online; dialog "Update available" with Later / Update now; after Later, an "Update to the latest version" button in the footer. Never reloads during a job. Static hosting only. |
 | Offline status | In 1.1.0 (owner, 2026-10-09): footer shows whether the app is ready offline or still downloading; clicking opens `/offline` with the download progress. The first visit is put under the service worker's control as soon as the download finishes (`clientsClaim`). |
 | Large-file reload | In 1.1.0 (owner, 2026-10-09): a 245 MB encrypt on the iPhone reloaded the page after 100% with no message. Keep the crash notice armed while the download is built, free the engine's memory before building it, then re-test; lower `PHONE_MAX_BYTES` only if it still fails. |
+| Install banner | In 1.1.0 (owner, 2026-10-09): phones only, never once installed. Android Chrome/Edge: a real Install button (`beforeinstallprompt`). iPhone Safari: "How" opens `/install` with five steps and the owner's own screenshots (personal details removed, address shown as `pdf.mss.io`). "Not now" hides it for 30 days. |
 | App version | `1.1.0`. |
 
 ## 1. What the package gives us
@@ -443,12 +444,100 @@ not shown: the reload looks unexplained.
   twice.
 - Owner check: the 245 MB re-test above.
 
+## 10. Install banner (phones only)
+
+### Why
+
+The offline app only works reliably once it is on the home screen and has finished downloading
+(sections 8–9). Most people don't know they can add a website to the home screen.
+
+### What is possible (static hosting only)
+
+- **Android Chrome / Edge / Samsung Internet:** the browser fires `beforeinstallprompt`; calling
+  `prompt()` on it from a click opens the browser's own install dialog. A real button is possible.
+- **iPhone / iPad (every iOS browser):** no API. Only the user can add the app (Safari: page menu →
+  Share → Add to Home Screen). The banner can only show the steps.
+- **Desktop:** out of scope (owner, 2026-10-09): the banner is for phones only.
+
+### Behavior
+
+- Shows only when **all** hold:
+  - a small touch screen (`hasSmallTouchScreen()`, the touch-screen half of `isLikelyPhone()` in
+    `src/lib/limits.ts`; the low-memory half is left out so laptops never see it);
+  - not already running as an installed app (`matchMedia("(display-mode: standalone)")` or
+    `navigator.standalone`);
+  - an install path exists here: a captured `beforeinstallprompt` (Android), or iOS Safari (iPhone/iPod
+    user agent, or an iPad reporting a Mac user agent with touch; not `CriOS`/`FxiOS`/`EdgiOS`, whose
+    menus differ from the screenshots);
+  - "Not now" wasn't tapped in the last 30 days;
+  - no job is running and no result is on screen (`job-activity`, like the update dialog).
+- Placement: a slim card under the header, above `CrashNotice`, on every page except `/install`.
+- **Android:**
+  > **Install PDF Toolbox** to open it like an app and use it offline. [Install] [Not now]
+
+  Install calls the saved event's `prompt()`. The event can be used once; after it the banner hides.
+  `appinstalled` hides it for good.
+- **iPhone:**
+  > **Add PDF Toolbox to your Home Screen** to open it like an app and use it offline. [How] [Not now]
+
+  How opens `/install`.
+- **"Not now"** stores the time in `localStorage` (`pdf-mss-io-install-dismissed`, inside try/catch;
+  without storage the banner simply shows again next visit).
+- **`/install` page** (lazy route, linked only from the banner): heading "Add PDF Toolbox to your Home
+  Screen", then five numbered steps, each with a screenshot (`public/install/*.webp`, 600 px wide,
+  ~43 KB in total, highlighted target in orange, `alt` text describing the screen):
+  1. In Safari, tap the menu button at the left of the address bar. (`ios-1-menu.webp`)
+  2. Tap **Share**. (`ios-2-share.webp`)
+  3. Scroll down and tap **Add to Home Screen**. (`ios-3-add-to-home-screen.webp`)
+  4. Keep **Open as Web App** on and tap **Add**. (`ios-4-add.webp`)
+  5. Open **PDF Toolbox** from your Home Screen. Keep it open while online until the footer says
+     **Ready offline**. (`ios-5-home-screen.webp`)
+
+  Under the steps: "On older iPhones the Share button is at the bottom of the screen." and a "Back to
+  home" button. The page works on any device (it is just instructions).
+- Screenshots are from the owner's iPhone (iOS 26 Safari). Status bar, contacts, other apps, bookmark
+  folder names and the test address were removed; the address reads `pdf.mss.io` / `https://pdf.mss.io/`.
+- **Precache:** `webp` is added to Workbox `globPatterns`, so the steps work offline.
+
+### Units
+
+| File | Responsibility |
+|---|---|
+| `src/lib/install-banner.ts` | Pure: `isIosSafari(userAgent, maxTouchPoints)`, `installBannerKind({ smallTouchScreen, standalone, iosSafari, promptAvailable, dismissedAt, now, busy }) → "android" \| "ios" \| null`, `INSTALL_DISMISS_MS` (30 days), `readDismissedAt(storage)`, `saveDismissedAt(storage, now)`. Unit-tested. |
+| `src/lib/use-install-banner.ts` | Captures `beforeinstallprompt` (module level, so an early event isn't missed), listens for `appinstalled`, reads the environment, returns `{ kind, install, dismiss }`. |
+| `src/components/InstallBanner.tsx` | The card. |
+| `src/pages/InstallPage.tsx` | `/install`. |
+| `src/lib/limits.ts` | Exports `hasSmallTouchScreen()`; `isLikelyPhone()` uses it. |
+
+### Tests
+
+- Unit: `isIosSafari` (iPhone Safari, iPhone Chrome/Firefox/Edge, iPad desktop UA with touch, Mac
+  without touch, Android), `installBannerKind` (each condition turning it off, Android vs iOS, the 30-day
+  boundary), dismissal storage (missing, garbage, throwing storage).
+- E2E `e2e/install.spec.ts`:
+  - iPhone (Playwright `devices["iPhone 15"]` user agent and viewport, Chromium): banner shows; How →
+    `/install` with five steps and every image loaded (`naturalWidth > 0`); Not now hides it and it
+    stays hidden after a reload.
+  - Android phone viewport + a dispatched fake `beforeinstallprompt` with a stubbed `prompt()`: Install
+    calls `prompt()` once and the banner hides.
+  - Installed (init script makes `display-mode: standalone` match): no banner.
+  - Desktop: no banner, even with a fake `beforeinstallprompt`.
+  - During a job: no banner.
+- `offline.spec.ts`: `/install` images are in the precache (offline load shows them).
+
+### Owner checks
+
+- iPhone Safari (not installed): banner shows; How's steps match what Safari shows; after adding, the
+  installed app shows no banner.
+- Android Chrome, if available: Install opens the browser's dialog.
+
 ## Out of scope
 
 - Progress for Info, `ensureNoOpenPassword` or post-steps (qpdf reports none).
 - An overall percentage across several qpdf calls in one job.
 - Cancelling a running job (the package can only `terminate()` the whole instance).
 - Any change to size limits or memory guards.
+- An install banner on desktop browsers (owner: phones only).
 - Byte-level download progress (the list has no sizes; files are counted, the engine is shown separately).
 - Showing the new version's number in the update dialog (the service worker doesn't carry it).
 - Updating users still on 1.0.0 through the dialog: their cached app has no prompt, so they reach 1.1.0 the old way (close every tab, reopen), once.
