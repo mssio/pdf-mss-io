@@ -17,12 +17,15 @@ const STEP_TEXT: Record<Exclude<JobStatusState["phase"], "run">, string> = {
  */
 export function JobStatus({ status }: { status: JobStatusState | null }) {
   const [now, setNow] = useState(() => Date.now());
+  const running = status !== null;
 
+  // Keyed on `running`, not `status`: progress replaces `status` several times a second, and
+  // restarting the interval on each update would freeze the clock.
   useEffect(() => {
-    if (!status) return;
+    if (!running) return;
     const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(tick);
-  }, [status]);
+  }, [running]);
 
   if (!status) return null;
   const step = status.phase === "run" ? status.label : STEP_TEXT[status.phase];

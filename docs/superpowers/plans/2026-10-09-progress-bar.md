@@ -659,7 +659,7 @@ export function JobStatus({ status }: { status: JobStatusState | null }) {
 }
 ```
 
-Note: the `useEffect` dependency on `status` now changes up to 100 times per job, which restarts the 1 s interval each time. Each restart comes with a render that refreshes the elapsed time anyway, so leave it.
+Correction (final review): the `useEffect` dependency on `status` restarts the 1 s interval on every progress update, which freezes the elapsed clock while progress arrives faster than once a second. The shipped code keys the effect on `running = status !== null`; `e2e/job-safeguard.spec.ts` "the elapsed time keeps ticking…" pins it.
 
 - [ ] **Step 4: Full check including E2E (nothing visible may change yet)**
 

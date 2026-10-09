@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { chooseFiles, download, inspectPdf, type RecordedProgress, recordedProgress, recordProgress } from "./helpers";
+import { chooseFiles, download, inspectPdf, type RecordedProgress, recordedProgress, recordProgress, spaceOutProgress } from "./helpers";
 
 /** Makes the PDF engine hang: its worker script is requested but never answered. */
 async function hangEngine(page: Page) {
@@ -86,4 +86,14 @@ test("encrypting shows a rising progress bar, then the result", async ({ page })
   expectRisingBar(await recordedProgress(page));
   const file = await download(page, "Download protected PDF");
   expect(await inspectPdf(file.path, "secret")).toMatchObject({ pageCount: 400, encrypted: true });
+});
+
+test("the elapsed time keeps ticking while progress arrives several times a second", async ({ page }) => {
+  await spaceOutProgress(page, 50); // 100 percents over ~5 s
+  await page.goto("/compress");
+  await chooseFiles(page, "twenty-mb.pdf");
+  await page.getByRole("button", { name: "Compress", exact: true }).click();
+  await expect(page.getByRole("progressbar")).toBeVisible();
+  await expect(page.getByText(/^Compressing… 0:0[2-9]$/)).toBeVisible({ timeout: 4_000 });
+  await expect(page.getByText("Your PDF is smaller")).toBeVisible();
 });

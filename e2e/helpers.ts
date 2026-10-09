@@ -77,3 +77,29 @@ export async function recordProgress(page: Page): Promise<void> {
 export async function recordedProgress(page: Page): Promise<RecordedProgress> {
   return page.evaluate(() => (window as unknown as { __progress: RecordedProgress }).__progress);
 }
+
+/**
+ * Delivers the PDF engine's messages in order, waiting `gapMs` after each progress message, so a fast
+ * write reports progress several times a second for a few seconds (like a big file on a slow device).
+ * Call before page.goto.
+ */
+export async function spaceOutProgress(page: Page, gapMs: number): Promise<void> {
+  await page.addInitScript((gap) => {
+    const native = Object.getOwnPropertyDescriptor(Worker.prototype, "onmessage")!;
+    Object.defineProperty(Worker.prototype, "onmessage", {
+      configurable: true,
+      get() {
+        return native.get!.call(this);
+      },
+      set(handler: ((event: MessageEvent) => void) | null) {
+        let queue = Promise.resolve();
+        native.set!.call(this, (event: MessageEvent) => {
+          queue = queue.then(async () => {
+            handler?.call(this, event);
+            if (event.data?.type === "progress") await new Promise((resolve) => setTimeout(resolve, gap));
+          });
+        });
+      },
+    });
+  }, gapMs);
+}
