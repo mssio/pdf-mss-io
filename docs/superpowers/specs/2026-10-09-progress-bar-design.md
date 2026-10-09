@@ -1,7 +1,7 @@
 # PDF Toolbox 1.1.0: real progress bar
 
 Date: 2026-10-09
-Status: draft for owner review
+Status: approved; revised 2026-10-09 after an iPhone test (smooth bar motion, section 4)
 
 ## Goal
 
@@ -26,6 +26,7 @@ This spec replaces `docs/notes/1.1.0-plan.md`, deleted in the commit that adds t
 | After 100% | "Finishing…" text, no bar (a bar stuck at 100% looks frozen). |
 | Info tool | No bar. `info()` takes no `onProgress`, and the Info tool's `run()` calls write no PDF. |
 | UI primitive | shadcn new-york v4 `Progress`, adapted to `@radix-ui/react-progress`. |
+| Bar motion | The fill glides to each new value (~600 ms, ease-out) and slides in from 0 when the bar appears, because qpdf's percent comes in bursts (section 1). No motion with "Reduce Motion" on. The `%` text always shows qpdf's real value. |
 | App version | `1.1.0`. |
 
 ## 1. What the package gives us
@@ -43,6 +44,11 @@ Checked against the published 1.1.0 tarball and the package's spec §7
   settles even if the UI moved on, so the app must drop them itself.
 - One percent can take ~0.5 s on desktop (compress) and several times that on phones. The package
   suggests a 30 s stall limit.
+- **The percent counts objects written, not bytes** (measured 2026-10-09 on a 24 MB PDF with many
+  small objects and a few 4 MB streams: encrypt went 0→25% in 3 ms, then paused on each big stream
+  and jumped ~15% at a time). On a phone the first burst finishes before the first frame, so the bar
+  first appeared at 36% in the owner's iPhone test. The bar shows how much of the file is written in
+  objects, not how much time is left.
 - **Same qpdf 12.4.2, byte-identical `qpdf.wasm` (2,226,004 bytes).** The out-of-memory behavior is
   unchanged, so `assertOutput()`, `MAX_TOTAL_BYTES`, `PHONE_MAX_BYTES` (250 MB) and the 3 MB
   precache limit stay as they are.
@@ -121,7 +127,10 @@ export const STALL_TIMEOUT_MS = 30_000;
 
 shadcn new-york v4 `Progress`, imports changed to `@radix-ui/react-progress`. Theme tokens only:
 track `bg-primary/20`, indicator `bg-primary`, `h-2 rounded-full`. Add `@radix-ui/react-progress` to
-`dependencies`.
+`dependencies`. `value` is passed to Radix's Root (the stock component omits it) so `aria-valuenow` is set.
+
+Indicator motion: `transition-transform duration-600 ease-out motion-reduce:transition-none` instead of
+the stock `transition-all` (150 ms), so a 15% jump glides instead of snapping.
 
 ### `JobStatus` (`src/components/JobStatus.tsx`)
 
@@ -132,6 +141,13 @@ track `bg-primary/20`, indicator `bg-primary`, `h-2 rounded-full`. Add `@radix-u
 | `run`, `percent` 0–99 | `Encrypting… 0:34`, then a row with the bar and `62%` |
 | `finishing` | `Finishing… 0:41`, no bar |
 
+- The bar row is a small `ProgressRow` inside `JobStatus.tsx`. It renders the bar at 0 on mount and
+  sets the real percent on the next animation frame, so the bar slides in from the left instead of
+  appearing at, say, 36%. Later values go through the same frame. The bar's `aria-valuenow` follows the
+  shown value, at most one frame behind qpdf; the `62%` text shows qpdf's value at once.
+- The elapsed clock's 1 s interval is keyed on whether a job runs, not on the status object: progress
+  replaces the status several times a second, and restarting the interval on each update froze the
+  clock (found in the final review).
 - The "Large files can take a few minutes on phones." hint stays (over 50 MB).
 - The doc comment loses "(qpdf reports no percentage)".
 - "Finishing…" is the only new user-facing string.
@@ -174,6 +190,10 @@ rising values ending at 100. Guards against a package regression.
   `aria-valuenow` of `[role=progressbar]` into `window`. After Compress and Encrypt of that fixture:
   recorded values strictly rise, at least one is between 1 and 99, the result page follows, and the
   download is verified with `inspectPdf()`. Recording avoids racing the live DOM.
+- Bar motion: in the Compress test, the first recorded value is 0 (the slide-in) and the indicator's
+  computed `transition-duration` is at least 0.5 s; with `reducedMotion: "reduce"` it is 0 s.
+- The elapsed clock keeps ticking while progress arrives several times a second (worker messages
+  spaced 50 ms apart by an init script).
 - `e2e/info.spec.ts`: no progressbar ever appears during an Info job.
 - Existing assertions ("Loading the PDF engine… 0:05", step + timer, timeouts) pass unchanged.
 - A stalled-while-writing engine can't be provoked in a browser; the unit tests cover it.

@@ -1037,3 +1037,142 @@ gh pr create --base main --head feat/progress-bar --title "1.1.0: progress bar" 
 ```
 
 Add the PR attribution footer from the session's instructions to the body. Don't merge, tag or release.
+
+---
+
+### Task 7: Smooth bar motion (added 2026-10-09 after the owner's iPhone test)
+
+qpdf's percent counts objects, so it arrives in bursts. On the iPhone, encrypt first showed the bar at 36% and then jumped ~15% at a time (spec §1). The bar should glide instead. Spec §4 "Indicator motion" and the `ProgressRow` bullet are the requirements.
+
+**Files:**
+- Modify: `src/components/ui/progress.tsx` (Indicator classes)
+- Modify: `src/components/JobStatus.tsx` (new `ProgressRow`)
+- Test: `e2e/job-safeguard.spec.ts`
+
+**Interfaces:**
+- Consumes: `spaceOutProgress(page, gapMs)`, `recordProgress`, `recordedProgress` from `e2e/helpers.ts`; the indicator's `data-slot="progress-indicator"`.
+- Produces: nothing new for other code.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `e2e/job-safeguard.spec.ts`, in the test "compressing shows a rising progress bar, then the result", replace `expectRisingBar(await recordedProgress(page));` with:
+
+```ts
+  const progress = await recordedProgress(page);
+  expectRisingBar(progress);
+  expect(progress.values[0]).toBe(0); // the bar slides in from 0 instead of appearing mid-way
+```
+
+Append:
+
+```ts
+/** Starts a Compress whose progress lasts ~5 s and returns the bar's fill once it shows. */
+async function compressWithVisibleBar(page: Page) {
+  await spaceOutProgress(page, 50);
+  await page.goto("/compress");
+  await chooseFiles(page, "twenty-mb.pdf");
+  await page.getByRole("button", { name: "Compress", exact: true }).click();
+  const fill = page.locator('[data-slot="progress-indicator"]');
+  await expect(fill).toBeVisible();
+  return fill;
+}
+
+test("the bar glides to each new value", async ({ page }) => {
+  const fill = await compressWithVisibleBar(page);
+  const transition = await fill.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { property: style.transitionProperty, seconds: parseFloat(style.transitionDuration) };
+  });
+  expect(transition.property).toContain("transform");
+  expect(transition.seconds).toBeGreaterThanOrEqual(0.5);
+});
+
+test.describe("with Reduce Motion on", () => {
+  test.use({ reducedMotion: "reduce" });
+
+  test("the bar doesn't animate", async ({ page }) => {
+    const fill = await compressWithVisibleBar(page);
+    expect(await fill.evaluate((element) => getComputedStyle(element).transitionProperty)).toBe("none");
+  });
+});
+```
+
+The first line of the spec file already imports `type Page` from `@playwright/test`, and the helpers import already includes `spaceOutProgress`.
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `npm run test:e2e -- e2e/job-safeguard.spec.ts`
+Expected: "compressing shows…" FAILS on `values[0]` (first value is 36 or similar, not 0). "the bar glides…" FAILS on `seconds` (0.15). "the bar doesn't animate" FAILS (the property is `all`, not `none`).
+
+- [ ] **Step 3: Slower, reduced-motion-aware indicator**
+
+In `src/components/ui/progress.tsx`, change the Indicator's `className` to:
+
+```tsx
+        className="h-full w-full flex-1 bg-primary transition-transform duration-600 ease-out motion-reduce:transition-none"
+```
+
+- [ ] **Step 4: Slide in from 0**
+
+In `src/components/JobStatus.tsx`, replace the bar block:
+
+```tsx
+      {status.percent !== null ? (
+        // Outside the live region: screen readers can query the bar, but percentages aren't announced.
+        <div className="flex items-center gap-2">
+          <Progress value={status.percent} aria-label={status.label} className="flex-1" />
+          <span aria-hidden="true" className="w-9 text-right text-xs tabular-nums">
+            {status.percent}%
+          </span>
+        </div>
+      ) : null}
+```
+
+with:
+
+```tsx
+      {status.percent !== null ? (
+        // Outside the live region: screen readers can query the bar, but percentages aren't announced.
+        <ProgressRow percent={status.percent} label={status.label} />
+      ) : null}
+```
+
+and add below `JobStatus`:
+
+```tsx
+/**
+ * The bar and qpdf's percent. The bar mounts at 0 and takes each value on the next animation frame,
+ * so it slides in (and glides on, via the indicator's transition) instead of appearing mid-way.
+ */
+function ProgressRow({ percent, label }: { percent: number; label: string }) {
+  const [shown, setShown] = useState(0);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setShown(percent));
+    return () => cancelAnimationFrame(frame);
+  }, [percent]);
+
+  return (
+    <div className="flex items-center gap-2">
+      <Progress value={shown} aria-label={label} className="flex-1" />
+      <span aria-hidden="true" className="w-9 text-right text-xs tabular-nums">
+        {percent}%
+      </span>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 5: Run the E2E suite**
+
+Run: `npm run test:e2e`
+Expected: all PASS (55 tests). Then `npx playwright test e2e/job-safeguard.spec.ts -g "rising progress" --repeat-each=10` → 20/20. The extra frame of delay must not make the "at least one value between 1 and 99" check flaky. If it does, investigate before changing the assertion.
+
+- [ ] **Step 6: Full check, commit, push**
+
+```bash
+npm run lint && npm test && npm run build
+git add src/components/ui/progress.tsx src/components/JobStatus.tsx e2e/job-safeguard.spec.ts
+git commit -m "feat: progress bar glides between values and slides in from 0"
+git push
+```
