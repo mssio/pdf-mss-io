@@ -2,6 +2,7 @@ import type { Qpdf } from "@mssio/qpdf-wasm";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { markJobFinished, markJobStarted } from "@/lib/crash-guard";
+import { jobFinished, jobStarted } from "@/lib/job-activity";
 import { createOnProgress, type JobStatusState } from "@/lib/job-progress";
 import {
   describeQpdfError,
@@ -59,6 +60,7 @@ export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) 
       setLastDurationMs(null);
       let phase: JobPhase = "load";
       markJobStarted();
+      jobStarted();
       try {
         const result = await runWithTimeLimits({
           load: getQpdf,
@@ -80,6 +82,7 @@ export function useQpdfJob({ nameFiles = false }: { nameFiles?: boolean } = {}) 
         return null;
       } finally {
         markJobFinished();
+        jobFinished();
         if (isCurrent()) {
           setBusy(false);
           setStatus(null);
