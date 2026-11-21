@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
-
 import { describe, expect, test } from "vitest";
 
 import { IJG_ACKNOWLEDGEMENT, parseThirdPartyNotices } from "@/lib/third-party-notices";
+// Same import as AboutPage.tsx.
+import shippedNotices from "../../node_modules/@mssio/qpdf-wasm/THIRD_PARTY_NOTICES.md?raw";
 
 describe("parseThirdPartyNotices", () => {
   test("splits libraries, titled and untitled fences, source and notes", () => {
@@ -46,7 +46,7 @@ describe("parseThirdPartyNotices", () => {
 
   // Guards against a @mssio/qpdf-wasm upgrade changing the file's format.
   test("parses the notices shipped in @mssio/qpdf-wasm", () => {
-    const md = readFileSync("node_modules/@mssio/qpdf-wasm/THIRD_PARTY_NOTICES.md", "utf8");
+    const md = shippedNotices;
     const libs = parseThirdPartyNotices(md);
     expect(libs.map((lib) => lib.name.split(" ")[0])).toEqual(["qpdf", "zlib", "libjpeg", "Emscripten", "musl", "libc++"]);
     expect(libs[0].sourceUrl).toBe("https://github.com/qpdf/qpdf");

@@ -51,9 +51,13 @@ export function AppShell() {
         <CrashNotice />
         <Outlet />
       </main>
-      <footer className="border-t border-border/60 py-6 text-center text-xs text-muted-foreground">
+      <footer className="border-t border-border/60 px-4 py-6 text-center text-xs text-muted-foreground">
         PDFs are processed locally in your browser. Nothing is uploaded. · Version {__APP_VERSION__}
         {__APP_BUILD_LABEL__ ? ` · ${__APP_BUILD_LABEL__}` : null}
+        {" · "}
+        <Link to="/about" className="underline-offset-4 hover:underline">
+          About
+        </Link>
         {update.updateReady && !update.promptOpen ? (
           <UpdateFooterButton disabled={update.jobRunning} onUpdate={update.updateNow} />
         ) : null}
