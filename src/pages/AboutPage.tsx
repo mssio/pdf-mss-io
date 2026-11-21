@@ -109,6 +109,7 @@ export function Component() {
                   >
                     <ChevronRight className="size-4 shrink-0 transition-transform group-open:rotate-90" aria-hidden="true" />
                     {license.title ?? "License"}
+                    <span className="sr-only"> for {library.name}</span>
                   </summary>
                   <pre className="max-h-80 overflow-auto rounded-md bg-muted p-3 font-mono text-xs whitespace-pre-wrap break-words text-foreground">
                     {license.text}

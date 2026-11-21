@@ -46,6 +46,12 @@ test("credits list the engine's libraries", async ({ page }) => {
   for (const item of await details.all()) await expect(item).not.toHaveAttribute("open");
 });
 
+test("each license toggle names its library for screen readers", async ({ page }) => {
+  await page.goto("/about");
+  await expect(page.locator("main summary").first()).toHaveAccessibleName("LICENSE.txt for qpdf 12.4.2");
+  await expect(page.locator("main summary").nth(2)).toHaveAccessibleName(/^License for zlib/);
+});
+
 test("keyboard opens a license", async ({ page }) => {
   await page.goto("/about");
   const first = page.locator("main details").first();
