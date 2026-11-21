@@ -121,3 +121,8 @@ Hosts must serve `sw.js` and `index.html` with `Cache-Control: no-cache` (or a s
 A release needs `npm run test:e2e` to pass and every owner check in [docs/todo.md](docs/todo.md) ticked. Releases are tagged (`v1.0.0`, `v1.1.0`); to deploy a version, build it from its tag (`git checkout v1.1.0 && npm ci && npm run build`) and host `dist/`.
 
 See [AGENTS.md](AGENTS.md) for the rules the code follows.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The PDF engine (`@mssio/qpdf-wasm`) is Apache-2.0; its third-party licenses
+are shown on the About page.
