@@ -35,6 +35,20 @@ test("repo links open GitHub in a new tab", async ({ page }) => {
   await expect(page.locator("main").getByText(`Version ${version}`)).toBeVisible();
 });
 
+test("both repos show their own license text", async ({ page }) => {
+  await page.goto("/about");
+  const source = page.locator('main [data-slot="card"]').filter({ has: page.getByRole("heading", { name: "Source code" }) });
+  await source.getByText("License for PDF Toolbox").click();
+  await expect(source.locator("pre").first()).toContainText("MIT License");
+  await source.getByText("License for qpdf-wasm").click();
+  await expect(source.locator("pre").nth(1)).toContainText("Apache License");
+});
+
+test("qpdf's source line keeps which tag was built", async ({ page }) => {
+  await page.goto("/about");
+  await expect(page.getByText("(tag v12.4.2), compiled unmodified.")).toBeVisible();
+});
+
 test("credits list the engine's libraries", async ({ page }) => {
   await page.goto("/about");
   await expect(page.getByRole("heading", { level: 2, name: "Credits" })).toBeVisible();
@@ -48,8 +62,9 @@ test("credits list the engine's libraries", async ({ page }) => {
 
 test("each license toggle names its library for screen readers", async ({ page }) => {
   await page.goto("/about");
-  await expect(page.locator("main summary").first()).toHaveAccessibleName("LICENSE.txt for qpdf 12.4.2");
-  await expect(page.locator("main summary").nth(2)).toHaveAccessibleName(/^License for zlib/);
+  const credits = page.locator('main [data-slot="card"]').filter({ has: page.getByRole("heading", { name: "Credits" }) });
+  await expect(credits.locator("summary").first()).toHaveAccessibleName("LICENSE.txt for qpdf 12.4.2");
+  await expect(credits.locator("summary").nth(2)).toHaveAccessibleName(/^License for zlib/);
 });
 
 test("keyboard opens a license", async ({ page }) => {

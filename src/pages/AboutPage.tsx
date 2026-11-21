@@ -9,15 +9,24 @@ import { cn } from "@/lib/utils";
 import { IJG_ACKNOWLEDGEMENT, parseThirdPartyNotices } from "@/lib/third-party-notices";
 // The package's `exports` block subpath imports, so the file is reached by path. Bundled into this chunk (precached).
 import noticesMarkdown from "../../node_modules/@mssio/qpdf-wasm/THIRD_PARTY_NOTICES.md?raw";
+import qpdfWasmLicense from "../../node_modules/@mssio/qpdf-wasm/LICENSE?raw";
+import appLicense from "../../LICENSE?raw";
 
 const LIBRARIES = parseThirdPartyNotices(noticesMarkdown);
 
 const REPOS = [
-  { name: "PDF Toolbox", href: "https://github.com/mssio/pdf-mss-io", license: "MIT", description: "This app." },
+  {
+    name: "PDF Toolbox",
+    href: "https://github.com/mssio/pdf-mss-io",
+    license: "MIT",
+    licenseText: appLicense,
+    description: "This app.",
+  },
   {
     name: "qpdf-wasm",
     href: "https://github.com/mssio/qpdf-wasm",
     license: "Apache-2.0",
+    licenseText: qpdfWasmLicense,
     description: "The PDF engine: qpdf compiled to WebAssembly.",
   },
 ];
@@ -36,6 +45,27 @@ function ExternalLink({ href, className, children }: { href: string; className?:
       <ExternalLinkIcon className="size-3.5 shrink-0" aria-hidden="true" />
       <span className="sr-only">(opens in a new tab)</span>
     </a>
+  );
+}
+
+/** A closed-by-default license text; screen readers hear which software it belongs to. */
+function LicenseDetails({ title, owner, text }: { title: string; owner: string; text: string }) {
+  return (
+    <details className="group">
+      <summary
+        className={cn(
+          "flex min-h-11 w-fit cursor-pointer list-none items-center gap-1 text-sm text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden",
+          FOCUS_RING,
+        )}
+      >
+        <ChevronRight className="size-4 shrink-0 transition-transform group-open:rotate-90" aria-hidden="true" />
+        {title}
+        <span className="sr-only"> for {owner}</span>
+      </summary>
+      <pre className="max-h-80 overflow-auto rounded-md bg-muted p-3 font-mono text-xs whitespace-pre-wrap break-words text-foreground">
+        {text.trim()}
+      </pre>
+    </details>
   );
 }
 
@@ -70,6 +100,7 @@ export function Component() {
                   <Badge variant="secondary">{repo.license}</Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">{repo.description}</p>
+                <LicenseDetails title="License" owner={repo.name} text={repo.licenseText} />
               </li>
             ))}
           </ul>
@@ -90,31 +121,22 @@ export function Component() {
             <section key={library.name} className="grid grid-cols-1 gap-1.5">
               <h3 className="text-sm font-semibold break-words">{library.name}</h3>
               {library.sourceUrl ? (
-                <ExternalLink href={library.sourceUrl} className="w-fit text-sm break-all">
-                  {library.sourceUrl}
-                </ExternalLink>
+                <div>
+                  <ExternalLink href={library.sourceUrl} className="w-fit text-sm break-all">
+                    {library.sourceUrl}
+                  </ExternalLink>
+                  {library.sourceDetail ? (
+                    <p className="text-sm text-muted-foreground">Source: {library.sourceDetail}</p>
+                  ) : null}
+                </div>
               ) : null}
-              {library.notes.map((note) => (
-                <p key={note} className="text-sm text-muted-foreground">
+              {library.notes.map((note, index) => (
+                <p key={index} className="text-sm text-muted-foreground">
                   {note}
                 </p>
               ))}
               {library.licenses.map((license, index) => (
-                <details key={index} className="group">
-                  <summary
-                    className={cn(
-                      "flex min-h-11 w-fit cursor-pointer list-none items-center gap-1 text-sm text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden",
-                      FOCUS_RING,
-                    )}
-                  >
-                    <ChevronRight className="size-4 shrink-0 transition-transform group-open:rotate-90" aria-hidden="true" />
-                    {license.title ?? "License"}
-                    <span className="sr-only"> for {library.name}</span>
-                  </summary>
-                  <pre className="max-h-80 overflow-auto rounded-md bg-muted p-3 font-mono text-xs whitespace-pre-wrap break-words text-foreground">
-                    {license.text}
-                  </pre>
-                </details>
+                <LicenseDetails key={index} title={license.title ?? "License"} owner={library.name} text={license.text} />
               ))}
             </section>
           ))}

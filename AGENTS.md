@@ -60,7 +60,7 @@ src/lib/*.ts              pure helpers (filename, format, limits, pdf-files, pag
                           passwords, merge-list, pdf-info, third-party-notices), each with a *.test.ts
 src/test/make-pdf.ts      builds valid PDFs for tests
 public/favicon.svg        source of every icon (`npm run icons` regenerates the PNGs/ICO)
-e2e/                      Playwright specs (one per tool + shell, offline, password fields, screenshots)
+e2e/                      Playwright specs (one per tool + shell, about, offline, password fields, screenshots)
 playwright.config.ts      E2E config: vite preview :4173, chromium all specs, webkit offline spec only
 docs/todo.md              release gate: automated-check table + owner boxes for the current release
 docs/notes/<ver>-plan.md  plans for future versions; their owner checks move into todo.md when a release starts

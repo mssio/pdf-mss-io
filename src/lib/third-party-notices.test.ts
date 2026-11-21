@@ -37,11 +37,41 @@ describe("parseThirdPartyNotices", () => {
       {
         name: "lib-a 1.0",
         sourceUrl: "https://example.com/a",
+        sourceDetail: "(tag v1), compiled.",
         notes: [],
         licenses: [{ title: "LICENSE", text: "# not a heading\nA" }],
       },
-      { name: "lib-b", sourceUrl: null, notes: ["Uses x."], licenses: [{ title: null, text: "B" }] },
+      { name: "lib-b", sourceUrl: null, sourceDetail: null, notes: ["Uses x."], licenses: [{ title: null, text: "B" }] },
     ]);
+  });
+
+  test("punctuation after a source URL stays out of the link", () => {
+    const [lib] = parseThirdPartyNotices("## z\n\nSource: https://github.com/madler/zlib, via Emscripten ports.\n");
+    expect(lib.sourceUrl).toBe("https://github.com/madler/zlib");
+    expect(lib.sourceDetail).toBe(", via Emscripten ports.");
+    const [bare] = parseThirdPartyNotices("## z\n\nSource: https://example.com/z.\n");
+    expect(bare.sourceUrl).toBe("https://example.com/z");
+    expect(bare.sourceDetail).toBe(".");
+  });
+
+  test("accepts any fence of four or more backticks, closed by the same run", () => {
+    const md = "## a\n\n`````txt\nX\n````\nY\n`````\n\n````\nZ\n````\n";
+    expect(parseThirdPartyNotices(md)[0].licenses).toEqual([
+      { title: null, text: "X\n````\nY" },
+      { title: null, text: "Z" },
+    ]);
+  });
+
+  test("an unclosed fence throws instead of dropping a license", () => {
+    expect(() => parseThirdPartyNotices("## a\n\n````text\nX\n")).toThrow(/unclosed/i);
+  });
+
+  test("a ### heading followed by prose doesn't name the next fence", () => {
+    const md = "## a\n\n### Notes\n\nSome prose.\n\n````text\nL\n````\n";
+    expect(parseThirdPartyNotices(md)[0]).toMatchObject({
+      notes: ["Notes", "Some prose."],
+      licenses: [{ title: null, text: "L" }],
+    });
   });
 
   // Guards against a @mssio/qpdf-wasm upgrade changing the file's format.
@@ -50,6 +80,8 @@ describe("parseThirdPartyNotices", () => {
     const libs = parseThirdPartyNotices(md);
     expect(libs.map((lib) => lib.name.split(" ")[0])).toEqual(["qpdf", "zlib", "libjpeg", "Emscripten", "musl", "libc++"]);
     expect(libs[0].sourceUrl).toBe("https://github.com/qpdf/qpdf");
+    expect(libs[0].sourceDetail).toBe("(tag v12.4.2), compiled unmodified.");
+    expect(libs.map((lib) => lib.licenses.length)).toEqual([2, 1, 1, 1, 1, 0]);
     expect(libs[0].licenses.map((license) => license.title)).toEqual(["LICENSE.txt", "NOTICE.md"]);
     for (const lib of libs.slice(0, 5)) {
       expect(lib.licenses.length, lib.name).toBeGreaterThan(0);

@@ -42,6 +42,17 @@ Covered by `npm run test:e2e`. Nothing to tick here: a passing run is the proof.
 | Update prompt: a new deployment shows "Update available"; Later moves it to the footer button, which updates; an update during a job waits until the job is done | `e2e/update.spec.ts` |
 | A job cut off by a page reload is explained once after the reload ("The page reloaded while a file was being processed…"), and a finished job leaves no notice | `e2e/phone.spec.ts` |
 | Offline: service worker active and wasm cached, then with the server stopped `/info` and `/decrypt` load and decrypting works (Chromium and WebKit) | `e2e/offline.spec.ts` |
+| About: footer link opens `/about`; both repo links open GitHub in a new tab and show their own license; the engine's credits (with the IJG sentence and qpdf's tag) list every library with closed license texts; license toggles name their library for screen readers and open with Enter; nothing overflows at 320 px with every license open; `/about` loads offline | `e2e/about.spec.ts`, `e2e/offline.spec.ts` |
+
+## Owner checks for 1.1.1
+
+Only the owner ticks these.
+
+- [ ] iPhone Safari: footer → About opens the page; the chevrons show and turn; license toggles are easy to tap; nothing scrolls sideways.
+- [ ] iPhone, installed app with flight mode on: `/about` opens and the credits show.
+- [ ] VoiceOver (iPhone or Mac): the page reads in order; repo links say they open a new tab; each license toggle names its library.
+- [ ] Light and dark mode: license texts are readable.
+- [ ] Both GitHub links open the right public repos.
 
 ## Next versions
 
