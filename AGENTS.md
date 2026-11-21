@@ -46,6 +46,7 @@ src/lib/offline-status.ts pure: offline state from the SW lifecycle + precache c
 src/lib/use-offline-status.ts  reads the registration and caches; polls while downloading
 src/components/OfflineStatusLink.tsx  footer "Ready offline" / "Downloading…" link → /offline
 src/pages/OfflinePage.tsx /offline: download progress, file list
+src/pages/AboutPage.tsx   /about: source links + PDF engine credits (from qpdf-wasm's THIRD_PARTY_NOTICES.md, bundled ?raw)
 src/lib/install-banner.ts pure: who sees the phone install banner (iOS Safari steps / Android install prompt)
 src/lib/use-install-banner.ts  captures beforeinstallprompt at module load; banner state
 src/components/InstallBanner.tsx  phones only: "Install" (Android) or "How" (iPhone) + "Not now" (30 days)
@@ -56,10 +57,10 @@ src/components/JobStatus.tsx  step + elapsed time (and a progress bar while qpdf
 src/app-version.d.ts      __APP_VERSION__ (package.json version, injected by vite.config.ts; shown in the footer)
                           and __APP_BUILD_LABEL__ (test builds only; src/lib/build-label.ts)
 src/lib/*.ts              pure helpers (filename, format, limits, pdf-files, page-ranges,
-                          passwords, merge-list, pdf-info), each with a *.test.ts
+                          passwords, merge-list, pdf-info, third-party-notices), each with a *.test.ts
 src/test/make-pdf.ts      builds valid PDFs for tests
 public/favicon.svg        source of every icon (`npm run icons` regenerates the PNGs/ICO)
-e2e/                      Playwright specs (one per tool + shell, offline, password fields, screenshots)
+e2e/                      Playwright specs (one per tool + shell, about, offline, password fields, screenshots)
 playwright.config.ts      E2E config: vite preview :4173, chromium all specs, webkit offline spec only
 docs/todo.md              release gate: automated-check table + owner boxes for the current release
 docs/notes/<ver>-plan.md  plans for future versions; their owner checks move into todo.md when a release starts
@@ -175,7 +176,7 @@ Checks only a person can do are the owner boxes in `docs/todo.md`; only the owne
 ## Test builds
 
 Builds served for the owner to try on a device (LAN `vite preview --host`, `tailscale serve`) use
-`npm run build:test`: the footer then reads "Version 1.1.0 · test <commit>[-dirty] <YYYY-MM-DD HH:mm:ss>", so a
+`npm run build:test`: the footer then reads "Version 1.1.1 · test <commit>[-dirty] <YYYY-MM-DD HH:mm:ss>", so a
 cached older build is easy to spot. Release builds use plain `npm run build` (no note).
 
 ## `.private/`
@@ -192,3 +193,12 @@ in git, so deleting them can't be undone:
 
 Commit each logical change and push right away on a feature branch, not `main`. Merging to `main`,
 tagging and creating releases need the owner's go-ahead.
+
+Release order (owner, 2026-10-09). No separate post-release PR:
+
+1. When every owner check in `docs/todo.md` is ticked, do the cleanup **inside the release PR**: README's
+   current version and release line, `docs/todo.md` (record the release, remove its ticked owner checks,
+   point "Next versions" at the next plan), the spec's status, CHANGELOG date. Propose the `.private/`
+   cleanup list (see above).
+2. The owner merges the PR.
+3. Delete the merged branches, then tag (`git tag -a vX.Y.Z -m "PDF Toolbox X.Y.Z"` on the merge commit).

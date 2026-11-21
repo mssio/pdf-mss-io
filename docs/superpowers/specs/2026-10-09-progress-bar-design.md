@@ -1,9 +1,9 @@
 # PDF Toolbox 1.1.0: real progress bar
 
 Date: 2026-10-09
-Status: approved; revised 2026-10-09 after an iPhone test (smooth bar motion, section 4) and to add the
-update prompt (section 7), offline readiness status (section 8) and the large-file reload fix
-(section 9), and the install banner (section 10, draft for owner review)
+Status: released as 1.1.0 on 2026-10-09 (tag `v1.1.0`). Revised during the work after iPhone tests (smooth bar
+motion, section 4) and to add the update prompt (section 7), offline readiness status (section 8), the
+large-file reload fix (section 9) and the install banner (section 10)
 
 ## Goal
 
